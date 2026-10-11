@@ -260,7 +260,7 @@ const MUSIC_XFADE = 2;        // seconds of each music track's end blended into 
 const CLIP_TRIM = {           // per-clip level trims, measured so the clips sit near the voice's loudness
   'sfx-bonk': 3, 'sfx-poof': 3, 'sfx-clack': 1.5, 'sfx-boing': 1.2, 'sfx-brake': 0.6, 'sfx-cheer': 0.4,
   'sfx-chuff1': 0.25, 'sfx-chuff2': 0.35, 'sfx-fanfare': 0.4, 'sfx-hiss': 0.45, 'sfx-sad': 0.4, 'sfx-sweep': 0.8,
-  'sfx-toot': 0.3, 'sfx-undo': 0.4, 'sfx-whistle': 0.25,
+  'sfx-toot': 0.3, 'sfx-undo': 0.4, 'sfx-whistle': 0.25, 'sfx-sputter': 0.4,
 };
 const LINES = {               // spoken text → recorded clip
   'Draw a track that joins all the stations!': 'say-intro', 'Join all the stations!': 'say-join',
@@ -270,11 +270,13 @@ const LINES = {               // spoken text → recorded clip
   'Every station needs the track!': 'say-missing', 'Draw a track from station to station!': 'say-start',
   'Trains go straight through the station!': 'say-tip-station', 'Cross the river on a bridge!': 'say-tip-bridge',
   'Go straight through the tunnel!': 'say-tip-tunnel', 'Go through the tunnel!': 'say-tip-tunnel', 'Follow the dots!': 'say-dots',
+  'The engine needs water! Go past the water tower.': 'say-water', 'Oh no! Out of water!': 'say-dry',
+  'Go past the water tower sooner!': 'say-sooner', 'Trains go straight past the water tower!': 'say-tip-tower',
 };
 const CLIPS = [
   ...new Set(Object.values(LINES)),
   'sfx-bell', 'sfx-boing', 'sfx-bonk', 'sfx-brake', 'sfx-cheer', 'sfx-chuff1', 'sfx-chuff2', 'sfx-clack', 'sfx-fanfare',
-  'sfx-hiss', 'sfx-poof', 'sfx-rub', 'sfx-sad', 'sfx-sweep', 'sfx-toot', 'sfx-undo', 'sfx-whistle',
+  'sfx-hiss', 'sfx-poof', 'sfx-rub', 'sfx-sad', 'sfx-sweep', 'sfx-toot', 'sfx-undo', 'sfx-whistle', 'sfx-fill', 'sfx-sputter',
   'music-draw', 'music-ride',
 ];
 const PENTA = [0, 2, 4, 7, 9];
@@ -399,10 +401,11 @@ const sfx = (() => {
       noise(0.17, 0.2 + 0.1 * v, 1100, 260, 'bandpass', 0, 0.9); tone(95, 55, 0.12, 'sine', 0.14);
     },
     glug() {   // water pouring into the tender
+      if (clip('sfx-fill')) return;
       noise(1.6, 0.12, 900, 500, 'bandpass', 0, 1.5, 0.2);
       for (let i = 0; i < 12; i++) { const f = 280 + Math.random() * 340; tone(f, f * 1.6, 0.07, 'sine', 0.1, i * 0.13 + Math.random() * 0.05); }
     },
-    sputter() { [0, 0.22, 0.5, 0.9].forEach((d, i) => { noise(0.16, 0.25 - i * 0.05, 800, 200, 'bandpass', d, 1); tone(120, 60, 0.14, 'sine', 0.14 - i * 0.03, d); }); },
+    sputter() { if (clip('sfx-sputter')) return; [0, 0.22, 0.5, 0.9].forEach((d, i) => { noise(0.16, 0.25 - i * 0.05, 800, 200, 'bandpass', d, 1); tone(120, 60, 0.14, 'sine', 0.14 - i * 0.03, d); }); },
     hiss() { if (clip('sfx-hiss')) return; noise(0.7, 0.08, 7000, 3500, 'highpass', 0, 0.7, 0.06); },
     brake() { if (clip('sfx-brake')) return; noise(0.6, 0.06, 4200, 2600, 'bandpass', 0, 6, 0.1); },
     fanfare() {
