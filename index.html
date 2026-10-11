@@ -120,6 +120,8 @@
   @keyframes popin{from{transform:scale(0) rotate(-90deg)}}
   #win .card{display:flex;flex-direction:column;align-items:center;gap:14px;animation:popin .5s cubic-bezier(.3,1.6,.5,1)}
 
+  .credit{margin:0;font-size:12px;color:#fff;opacity:.9;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+  #start .credit{position:absolute;bottom:calc(10px + env(safe-area-inset-bottom,0px));left:0;right:0}
   #confetti{position:fixed;inset:0;pointer-events:none;z-index:45;overflow:hidden}
   .conf{position:absolute;top:-24px;width:11px;height:17px;border-radius:2px;animation:fall linear forwards}
   @keyframes fall{to{transform:translateY(115vh) rotate(800deg)}}
@@ -155,6 +157,7 @@
 <div id="start" class="over">
   <h1>Choo-Choo<br>Loop</h1>
   <button id="play" class="big" aria-label="Play"><svg viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z" fill="#fff" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></button>
+  <p class="credit">Voices and sounds: elevenlabs.io · Music: Eleven Music</p>
 </div>
 <div id="win" class="over" hidden>
   <div class="card">
@@ -164,6 +167,7 @@
       <button id="again" aria-label="Ride again"><svg viewBox="0 0 24 24"><path d="M19 12A7 7 0 1 1 16 6.3" fill="none" stroke="#23324a" stroke-width="3" stroke-linecap="round"/><path d="M12.5 3 17 6.3l-3.6 4" fill="none" stroke="#23324a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button id="next" class="big" aria-label="Next track"><svg viewBox="0 0 24 24"><path d="M8 3.5 16.5 12 8 20.5" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
+    <p class="credit">Voices and sounds: elevenlabs.io · Music: Eleven Music</p>
   </div>
 </div>
 <div id="confetti"></div>
@@ -228,18 +232,87 @@ function runClock() {
 }
 
 /* ============================================================
-   Sound: all synthesized with Web Audio; spoken lines use the
-   device's own voice (speechSynthesis)
+   Sound: ElevenLabs clips and music from assets/, with the
+   synthesized sounds and the device's voice as fallback
+   (e.g. on file://, or while a clip is still loading)
    ============================================================ */
+const ASSET_V = 1;            // bump after replacing any file in assets/
+const CLIP_VOL = 0.8;         // sound effect clips
+const VOICE_VOL = 1;          // spoken clips
+const MUSIC_VOL = 0.2;        // the music while drawing
+const RIDE_MUSIC_VOL = 0.15;  // the music during the ride (the chuffing plays on top)
+const MUSIC_DUCK = 0.35;      // music drops to this share of its level while the voice speaks
+const MUSIC_XFADE = 2;        // seconds of each music track's end blended into its start, so the loop has no seam
+const CLIP_TRIM = {           // per-clip level trims, measured so the clips sit near the voice's loudness
+  'sfx-bonk': 3, 'sfx-poof': 3, 'sfx-clack': 1.5, 'sfx-boing': 1.2, 'sfx-brake': 0.6, 'sfx-cheer': 0.4,
+  'sfx-chuff1': 0.25, 'sfx-chuff2': 0.35, 'sfx-fanfare': 0.4, 'sfx-hiss': 0.45, 'sfx-sad': 0.4, 'sfx-sweep': 0.8,
+  'sfx-toot': 0.3, 'sfx-undo': 0.4, 'sfx-whistle': 0.25,
+};
+const LINES = {               // spoken text → recorded clip
+  'Draw a track that joins all the stations!': 'say-intro', 'Join all the stations!': 'say-join',
+  'All joined up! Press the green train!': 'say-ready', 'All aboard!': 'say-aboard', 'Back home!': 'say-home',
+  'Blue station!': 'say-blue', 'Yellow station!': 'say-yellow', 'Green station!': 'say-green', 'Purple station!': 'say-purple',
+  'Hooray! Everyone had a ride!': 'say-hooray', 'Oops! The track has a gap.': 'say-gap',
+  'Every station needs the track!': 'say-missing', 'Draw a track from station to station!': 'say-start',
+  'Trains go straight through the station!': 'say-tip-station', 'Cross the river on a bridge!': 'say-tip-bridge',
+  'Go straight through the tunnel!': 'say-tip-tunnel', 'Go through the tunnel!': 'say-tip-tunnel', 'Follow the dots!': 'say-dots',
+};
+const CLIPS = [
+  ...new Set(Object.values(LINES)),
+  'sfx-bell', 'sfx-boing', 'sfx-bonk', 'sfx-brake', 'sfx-cheer', 'sfx-chuff1', 'sfx-chuff2', 'sfx-clack', 'sfx-fanfare',
+  'sfx-hiss', 'sfx-poof', 'sfx-rub', 'sfx-sad', 'sfx-sweep', 'sfx-toot', 'sfx-undo', 'sfx-whistle',
+  'music-draw', 'music-ride',
+];
 const PENTA = [0, 2, 4, 7, 9];
 const sfx = (() => {
-  let ac = null, out = null, noiseBuf = null, muted = store.get('muted', false);
+  let ac = null, out = null, musicBus = null, noiseBuf = null, voice = null, muted = store.get('muted', false);
+  let track = null, wantMusic = null, cheerAt = 0;
+  const raw = {}, clips = {};   // fetched bytes start loading now; decoding needs the AudioContext from the first tap
+  for (const n of CLIPS) raw[n] = fetch(`assets/${n}.mp3?v=${ASSET_V}`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
   function init() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
     ac = new AC(); out = ac.createGain(); out.gain.value = muted ? 0 : 0.7; out.connect(ac.destination);
+    musicBus = ac.createGain(); musicBus.connect(out);
     noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    for (const n of CLIPS) raw[n].then((b) => b && new Promise((res, rej) => ac.decodeAudioData(b, res, rej)))
+      .then((buf) => {
+        if (!buf) return;
+        clips[n] = n.startsWith('music') ? loopable(buf) : buf;
+        if (wantMusic && wantMusic[0] === n) music(...wantMusic);
+      }).catch(() => {});
+  }
+  // blends the last MUSIC_XFADE seconds into the start (equal-power), so the shortened buffer loops without a seam
+  function loopable(buf) {
+    const X = Math.floor(MUSIC_XFADE * buf.sampleRate), L = buf.length - X;
+    const b = ac.createBuffer(buf.numberOfChannels, L, buf.sampleRate);
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const d = buf.getChannelData(c), o = b.getChannelData(c);
+      o.set(d.subarray(0, L));
+      for (let i = 0; i < X; i++) { const u = i / X; o[i] = d[i] * Math.sin(u * Math.PI / 2) + d[L + i] * Math.cos(u * Math.PI / 2); }
+    }
+    return b;
+  }
+  function clip(name, vol = CLIP_VOL, rate = 1) {   // plays a loaded clip; returns null if it isn't loaded so the caller can synthesize
+    const buf = clips[name]; if (!ac || !buf) return null;
+    const s = ac.createBufferSource(), g = ac.createGain(); s.buffer = buf; s.playbackRate.value = rate;
+    g.gain.value = vol * (CLIP_TRIM[name] ?? 1); s.connect(g).connect(out); s.start(); return s;
+  }
+  // background music: one looping track at a time, crossfading when it changes
+  function music(name, vol = MUSIC_VOL) {
+    wantMusic = name ? [name, vol] : null;
+    if (!ac) return; const t = ac.currentTime;
+    if (track && track.name === name) { track.g.gain.setTargetAtTime(vol, t, 0.5); return; }
+    if (track) { const old = track; old.g.gain.setTargetAtTime(0.0001, t, 0.4); setTimeout(() => { try { old.s.stop(); } catch {} }, 2500); track = null; }
+    const buf = name && clips[name]; if (!buf) return;      // not decoded yet: init() starts it when it is
+    const s = ac.createBufferSource(), g = ac.createGain(); s.buffer = buf; s.loop = true;
+    g.gain.setValueAtTime(0.0001, t); g.gain.setTargetAtTime(vol, t, 0.6);
+    s.connect(g).connect(musicBus); s.start(); track = { name, s, g };
+  }
+  function duck(dur) {
+    if (!musicBus) return; const t = ac.currentTime;
+    musicBus.gain.cancelScheduledValues(t); musicBus.gain.setTargetAtTime(MUSIC_DUCK, t, 0.08); musicBus.gain.setTargetAtTime(1, t + dur, 0.4);
   }
   function tone(f0, f1, dur, type = 'sine', vol = 0.3, delay = 0) {
     if (!ac) return; const t = ac.currentTime + delay;
@@ -278,41 +351,59 @@ const sfx = (() => {
     noise(dur, 0.05, 2600, 2400, 'bandpass', delay, 2, 0.05);
   }
   return {
-    init,
+    init, music,
     get muted() { return muted; },
+    get debug() { return { loaded: Object.keys(clips).length, of: CLIPS.length, track: track && track.name, state: ac && ac.state }; },
     toggle() { muted = !muted; store.set('muted', muted); if (out) out.gain.value = muted ? 0 : 0.7; if (muted) try { speechSynthesis.cancel(); } catch {} return muted; },
-    note(n) { const k = n % 10, f = 392 * Math.pow(2, (PENTA[k % 5] + 12 * Math.floor(k / 5)) / 12); tone(f, f, 0.14, 'triangle', 0.16); noise(0.03, 0.08, 5000, 3000, 'highpass'); },
+    note(n) {   // each new piece of track: a rising pentatonic note (synthesized, it's musical) and a clack
+      const k = n % 10, f = 392 * Math.pow(2, (PENTA[k % 5] + 12 * Math.floor(k / 5)) / 12); tone(f, f, 0.14, 'triangle', 0.13);
+      if (!clip('sfx-clack', CLIP_VOL, 0.95 + Math.random() * 0.1)) noise(0.03, 0.08, 5000, 3000, 'highpass');
+    },
     unnote() { tone(500, 330, 0.08, 'triangle', 0.12); },
-    bonk() { tone(230, 150, 0.14, 'square', 0.1); tone(160, 110, 0.16, 'sine', 0.25); },
-    rub() { noise(0.16, 0.22, 1500, 500, 'bandpass', 0, 1.2); tone(620, 300, 0.1, 'sine', 0.12); },
-    sweep() { noise(0.7, 0.4, 400, 3600, 'bandpass', 0, 0.8, 0.1); },
-    undo() { tone(300, 900, 0.25, 'sine', 0.18); },
+    bonk() { if (clip('sfx-bonk')) return; tone(230, 150, 0.14, 'square', 0.1); tone(160, 110, 0.16, 'sine', 0.25); },
+    rub() { if (clip('sfx-rub', CLIP_VOL, 0.9 + Math.random() * 0.2)) return; noise(0.16, 0.22, 1500, 500, 'bandpass', 0, 1.2); tone(620, 300, 0.1, 'sine', 0.12); },
+    sweep() { if (clip('sfx-sweep')) return; noise(0.7, 0.4, 400, 3600, 'bandpass', 0, 0.8, 0.1); },
+    undo() { if (clip('sfx-undo')) return; tone(300, 900, 0.25, 'sine', 0.18); },
     click() { tone(880, 660, 0.06, 'triangle', 0.14); },
-    boing() { tone(260, 640, 0.2, 'sine', 0.22); tone(390, 960, 0.2, 'triangle', 0.06); },
-    yay() { tone(880, 1320, 0.11, 'triangle', 0.12); tone(1100, 1650, 0.14, 'triangle', 0.1, 0.1); },
-    poof() { noise(0.45, 0.4, 2400, 300, 'bandpass', 0, 0.7); },
+    boing() { if (clip('sfx-boing', CLIP_VOL, 0.92 + Math.random() * 0.2)) return; tone(260, 640, 0.2, 'sine', 0.22); tone(390, 960, 0.2, 'triangle', 0.06); },
+    yay() {   // passengers getting off cheer; one cheer clip at a time
+      if (ac && ac.currentTime - cheerAt > 1.2 && clip('sfx-cheer', CLIP_VOL, 0.95 + Math.random() * 0.15)) { cheerAt = ac.currentTime; return; }
+      tone(880, 1320, 0.11, 'triangle', 0.08); tone(1100, 1650, 0.14, 'triangle', 0.06, 0.1);
+    },
+    poof() { if (clip('sfx-poof')) return; noise(0.45, 0.4, 2400, 300, 'bandpass', 0, 0.7); },
+    appear() { if (clip('sfx-poof')) return; this.poof(); this.magic(); },
     magic() { [0, 4, 7, 12, 16, 19].forEach((s, i) => { const f = 784 * Math.pow(2, s / 12); tone(f, f, 0.18, 'sine', 0.1, i * 0.06); }); },
     ding() { [1047, 1319, 1568].forEach((f, i) => tone(f, f, 0.5, 'sine', 0.14, i * 0.09)); },
-    bell() { tone(1568, 1568, 0.9, 'sine', 0.13); tone(2350, 2350, 0.6, 'sine', 0.05); tone(3920, 3920, 0.25, 'sine', 0.03); },
-    toot(n = 2) { for (let i = 0; i < n; i++) whistle(i === n - 1 ? 0.62 : 0.26, i * 0.36); },
-    sadToot() { whistle(0.75, 0, true); },
-    chuff(v) { noise(0.17, 0.2 + 0.1 * v, 1100, 260, 'bandpass', 0, 0.9); tone(95, 55, 0.12, 'sine', 0.14); },
-    hiss() { noise(0.7, 0.08, 7000, 3500, 'highpass', 0, 0.7, 0.06); },
-    brake() { noise(0.6, 0.06, 4200, 2600, 'bandpass', 0, 6, 0.1); },
+    bell() { if (clip('sfx-bell')) return; tone(1568, 1568, 0.9, 'sine', 0.13); tone(2350, 2350, 0.6, 'sine', 0.05); tone(3920, 3920, 0.25, 'sine', 0.03); },
+    toot(n = 2) {
+      if (clip(n > 2 ? 'sfx-whistle' : 'sfx-toot')) return;
+      for (let i = 0; i < n; i++) whistle(i === n - 1 ? 0.62 : 0.26, i * 0.36);
+    },
+    sadToot() { if (clip('sfx-sad')) return; whistle(0.75, 0, true); },
+    chuff(v) {
+      if (clip(Math.random() < 0.5 ? 'sfx-chuff1' : 'sfx-chuff2', CLIP_VOL * (0.6 + 0.4 * v), 0.92 + 0.16 * Math.random())) return;
+      noise(0.17, 0.2 + 0.1 * v, 1100, 260, 'bandpass', 0, 0.9); tone(95, 55, 0.12, 'sine', 0.14);
+    },
+    hiss() { if (clip('sfx-hiss')) return; noise(0.7, 0.08, 7000, 3500, 'highpass', 0, 0.7, 0.06); },
+    brake() { if (clip('sfx-brake')) return; noise(0.6, 0.06, 4200, 2600, 'bandpass', 0, 6, 0.1); },
     fanfare() {
+      if (clip('sfx-fanfare')) return;
       [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, 'triangle', 0.26, i * 0.14));
       [523, 659, 784].forEach((f) => tone(f, f, 1.0, 'triangle', 0.16, 0.64)); tone(1047, 1047, 1.0, 'square', 0.06, 0.64);
       for (let i = 0; i < 8; i++) tone(1800 + i * 150, 2400 + i * 150, 0.08, 'sine', 0.05, 1.1 + i * 0.07);
     },
-    say(text) {
-      if (muted) return; const ss = window.speechSynthesis; if (!ss) return;
+    say(text) {   // spoken line: its recorded clip, else the browser's built-in voice reads `text`
+      if (muted) return;
+      try { speechSynthesis.cancel(); } catch {}
+      if (voice) { try { voice.stop(); } catch {} voice = null; }
+      if (LINES[text] && (voice = clip(LINES[text], VOICE_VOL))) { duck(voice.buffer.duration); return; }
+      const ss = window.speechSynthesis; if (!ss) return;
       try {
-        ss.cancel();
         const u = new SpeechSynthesisUtterance(text);
         const en = ss.getVoices().filter((v) => /^en/i.test(v.lang));
         u.voice = en.find((v) => /female|samantha|zira|aria|jenny|google us/i.test(v.name)) || en[0] || null;
         u.lang = 'en-US'; u.rate = 1.0; u.pitch = 1.3; u.volume = 1;
-        ss.speak(u);
+        duck(text.length * 0.07); ss.speak(u);
       } catch {}
     },
   };
@@ -1397,7 +1488,7 @@ function appear() {
   train.root.visible = true; train.v = 0; train.target = null; train.chuffAt = train.dist + 0.3; placeTrain();
   for (const car of train.cars) { car.g.scale.setScalar(0.01); const p = car.g.position;
     for (let k = 0; k < 7; k++) puff(V(p.x + rand(-0.5, 0.5), rand(0.2, 0.8), p.z + rand(-0.5, 0.5)), V(rand(-1, 1), rand(0.4, 1.4), rand(-1, 1)), 0.5, 1.6, 1.2, '#ffffff', 0.95); }
-  sfx.poof(); sfx.magic();
+  sfx.appear();
   return tween(0.7, (u) => { const e = u === 1 ? 1 : 1 - Math.pow(2, -10 * u) * Math.cos(u * 10); for (const car of train.cars) car.g.scale.setScalar(Math.max(0.01, e)); });
 }
 
@@ -1423,7 +1514,7 @@ async function alight(st) {
   })));
 }
 async function ride(ev) {
-  state = 'ride'; bar.classList.add('off'); goBtn.classList.remove('ready'); clearMarks(); handOff(); hintT = 0;
+  state = 'ride'; bar.classList.add('off'); sfx.music('music-ride', RIDE_MUSIC_VOL); goBtn.classList.remove('ready'); clearMarks(); handOff(); hintT = 0;
   // pieces that aren't part of the loop are tidied away
   const junk = ev.comps.filter((c) => c !== ev.best).flatMap((c) => c.cells);
   if (junk.length) { for (const i of junk) { for (const d of [...conn[i]]) unlink(i, d); dust(i, '#ffffff', 4); } sfx.poof(); await wait(0.5); }
@@ -1433,7 +1524,7 @@ async function ride(ev) {
   const visit = stops.slice(1).sort((a, b) => a.s - b.s);
   train.s = stops[0].s;
   await appear();
-  await wait(0.5);
+  sfx.hiss(); await wait(0.5);
   sfx.bell(); sfx.say('All aboard!');
   await board(home); visited(home);
   for (const stop of [...visit, { st: home, s: stops[0].s + path.L }]) {
@@ -1448,10 +1539,10 @@ async function ride(ev) {
   }
   await wait(0.4);
   for (const c of critters) if (c.state !== 'sit') { c.state = 'cheer'; c.cheerT = 3; }
-  sfx.fanfare(); sfx.toot(3); confetti(); setTimeout(() => sfx.say('Hooray! Everyone had a ride!'), 900);
+  sfx.music(null); sfx.fanfare(); sfx.toot(3); confetti(); setTimeout(() => sfx.say('Hooray! Everyone had a ride!'), 900);
   store.set('level', lv.n + 1);
   await wait(2.4);
-  state = 'win'; $('#win').hidden = false;
+  state = 'win'; $('#win').hidden = false; sfx.music('music-draw', MUSIC_VOL * 0.6);
 }
 function visited(st) {
   st.visited = true; drawBadge();
@@ -1596,7 +1687,7 @@ function newLevel(n) {
   state = $('#start').hidden ? 'edit' : 'title';
 }
 function startLevel() {
-  state = 'edit'; idleT = 0;
+  state = 'edit'; idleT = 0; sfx.music('music-draw', MUSIC_VOL);
   sfx.say(lv.n === 1 ? 'Draw a track that joins all the stations!' : 'Join all the stations!');
   if (lv.n <= 2) handOn_();
 }
@@ -1659,6 +1750,7 @@ window.__choo = {   // handy for debugging in the console
   get lv() { return lv; }, get state() { return state; }, conn: () => conn, evaluate, newLevel, makeLevel, cut: eraseCell,
   solve() { const s = lv.solution; resetTrack(); for (let k = 0; k < s.length; k++) link(s[k], dirTo(s[k], s[(k + 1) % s.length])); afterEdit(); },
   tick(seconds) { for (let i = 0; i < seconds * 30; i++) frame(1 / 30); },
+  get sound() { return sfx.debug; },
 };
 </script>
 <script>
