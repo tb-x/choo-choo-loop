@@ -60,7 +60,7 @@
   @keyframes blink{50%{opacity:.35}}
   @keyframes wobble{25%{transform:translateX(calc(-50% - 7px))}75%{transform:translateX(calc(-50% + 7px))}}
 
-  #mute{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:calc(10px + env(safe-area-inset-right,0px));z-index:5;
+  #mute{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));right:calc(10px + env(safe-area-inset-right,0px));z-index:50;
     width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.82);font-size:22px;line-height:44px;padding:0;box-shadow:0 3px 0 rgba(0,0,0,.15)}
 
   /* ---------- home: back to the list of all games ---------- */
@@ -141,6 +141,7 @@
 </head>
 <body>
 <a id="home" href="../index.html" aria-label="All games" title="All games"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 9.8V20h12V9.8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/><path d="M10 20v-5.5h4V20" fill="currentColor"/></svg></a>
+<button id="mute" aria-label="Sound on or off">🔈</button>
 <div id="app">
   <div id="stage">
     <canvas id="c"></canvas>
@@ -149,7 +150,6 @@
       <span id="dots"></span>
     </div>
     <div id="tank" hidden aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.5C9 7 5.5 10.6 5.5 14.6a6.5 6.5 0 0 0 13 0C18.5 10.6 15 7 12 2.5z" fill="#3b9cff" stroke="#23324a" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.3 14.5a2.8 2.8 0 0 0 1.6 2.6" stroke="#fff" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg><span><i></i></span></div>
-    <button id="mute" aria-label="Sound on or off">🔈</button>
     <div id="hand"><svg viewBox="0 0 64 64"><path d="M25 7a5 5 0 0 1 10 0v21l3-.6a5 5 0 0 1 5.6 3.2l.4.9a5 5 0 0 1 6.6 3.4l.3.9a5 5 0 0 1 6.1 4.9V48c0 8.8-7.2 14-16 14h-5c-6.2 0-10.6-2.8-14-8L11 43.5a5 5 0 0 1 7.6-6.4L25 43z" fill="#fff" stroke="#23324a" stroke-width="3" stroke-linejoin="round"/></svg></div>
   </div>
   <div id="bar">
@@ -282,17 +282,17 @@ const CLIPS = [
 const PENTA = [0, 2, 4, 7, 9];
 const sfx = (() => {
   let ac = null, out = null, musicBus = null, noiseBuf = null, voice = null, muted = store.get('muted', false);
-  let track = null, wantMusic = null, cheerAt = 0;
-  const raw = {}, clips = {};   // fetched bytes start loading now; decoding needs the AudioContext from the first tap
+  let track = null, wantMusic = null, cheerAt = 0, sayId = 0;
+  const raw = {}, clips = {}, decoded = {};   // fetched bytes start loading now; decoding needs the AudioContext from the first tap
   for (const n of CLIPS) raw[n] = fetch(`assets/${n}.mp3?v=${ASSET_V}`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
   function init() {
-    if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+    if (ac) { if (ac.state !== 'running') ac.resume().catch(() => {}); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
     ac = new AC(); out = ac.createGain(); out.gain.value = muted ? 0 : 0.7; out.connect(ac.destination);
     musicBus = ac.createGain(); musicBus.connect(out);
     noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    for (const n of CLIPS) raw[n].then((b) => b && new Promise((res, rej) => ac.decodeAudioData(b, res, rej)))
+    for (const n of CLIPS) decoded[n] = raw[n].then((b) => b && new Promise((res, rej) => ac.decodeAudioData(b, res, rej)))
       .then((buf) => {
         if (!buf) return;
         clips[n] = n.startsWith('music') ? loopable(buf) : buf;
@@ -368,6 +368,7 @@ const sfx = (() => {
   }
   return {
     init, music,
+    hidden(h) { if (!ac) return; if (h) ac.suspend().catch(() => {}); else ac.resume().catch(() => {}); },
     get muted() { return muted; },
     get debug() { return { loaded: Object.keys(clips).length, of: CLIPS.length, track: track && track.name, state: ac && ac.state }; },
     toggle() { muted = !muted; store.set('muted', muted); if (out) out.gain.value = muted ? 0 : 0.7; if (muted) try { speechSynthesis.cancel(); } catch {} return muted; },
@@ -416,9 +417,17 @@ const sfx = (() => {
     },
     say(text) {   // spoken line: its recorded clip, else the browser's built-in voice reads `text`
       if (muted) return;
+      const id = ++sayId, name = LINES[text];
       try { speechSynthesis.cancel(); } catch {}
       if (voice) { try { voice.stop(); } catch {} voice = null; }
-      if (LINES[text] && (voice = clip(LINES[text], VOICE_VOL))) { duck(voice.buffer.duration); return; }
+      if (name && ac && !clips[name] && decoded[name]) {   // still decoding (right after the first tap): wait up to 1.5 s for it
+        Promise.race([decoded[name], new Promise((r) => setTimeout(r, 1500))]).then(() => { if (id === sayId) this.speak(text, name); });
+        return;
+      }
+      this.speak(text, name);
+    },
+    speak(text, name) {
+      if (name && (voice = clip(name, VOICE_VOL))) { duck(voice.buffer.duration); return; }
       const ss = window.speechSynthesis; if (!ss) return;
       try {
         const u = new SpeechSynthesisUtterance(text);
@@ -699,7 +708,7 @@ function makeLevel(n, portrait) {
     const L = dress(spec, loop, portrait, attempt > 450, themeFor(n));
     if (L) { L.n = n; L.theme = themeFor(n); return L; }
   }
-  return makeLevel(Math.max(1, n - 1), portrait);   // never seen in practice
+  return makeLevel(n, portrait);   // never seen in practice (2,400 test levels all succeeded first time round)
 }
 
 function dress(spec, loop, portrait, relaxed, theme) {
@@ -974,7 +983,7 @@ function makeTunnel(i) {
   s.lineTo(U, 0); s.lineTo(R, 0); s.lineTo(R, WALL); s.absarc(0, WALL, R, 0, Math.PI, false); s.lineTo(-R, 0); s.closePath();
   const geo = new THREE.ExtrudeGeometry(s, { depth: CS, bevelEnabled: false, curveSegments: 10 }).translate(0, 0, -CS / 2);
   const hill = new THREE.Mesh(geo, [mat(TH.desert ? '#c98f5a' : '#a8957a', FLAT), mat(TH.hill, FLAT)]); hill.castShadow = hill.receiveShadow = true; grp.add(hill);
-  const inside = new THREE.Mesh(new THREE.BoxGeometry(2 * R - 0.04, WALL + R - 0.02, CS - 0.02), new THREE.MeshBasicMaterial({ color: '#141418', side: THREE.BackSide }));
+  const inside = new THREE.Mesh(new THREE.BoxGeometry(2 * R - 0.04, WALL + R - 0.02, CS - 0.02), new THREE.MeshBasicMaterial({ color: '#141418', side: THREE.BackSide, userData: { own: true } }));
   inside.position.y = (WALL + R) / 2; grp.add(inside);
   for (const z of [-CS / 2 - 0.02, CS / 2 + 0.02]) {                        // stone portals
     const arch = mesh(new THREE.TorusGeometry(R + 0.06, 0.09, 6, 14, Math.PI), '#d9d2c3', 0, WALL, z); arch.scale.set(1, 1, 0.8); grp.add(arch);
@@ -1297,7 +1306,7 @@ function makeTower(t) {
   const arm = new THREE.Group(); arm.position.set(0, 1.22, Z + 0.32); arm.rotation.x = -0.7; g.add(arm);   // the spout, swung up out of the way
   put(arm, G.cyl, '#3a3a44', 0, 0, 0.26, 0.045, 0.52, 0.045, 0, false, Math.PI / 2);
   put(arm, G.cyl, '#3a3a44', 0, -0.06, 0.5, 0.05, 0.12, 0.05);
-  const stream = new THREE.Mesh(G.cyl, new THREE.MeshStandardMaterial({ color: '#6ec8ff', transparent: true, opacity: 0.8, roughness: 0.1 }));
+  const stream = new THREE.Mesh(G.cyl, new THREE.MeshStandardMaterial({ color: '#6ec8ff', transparent: true, opacity: 0.8, roughness: 0.1, userData: { own: true } }));
   stream.visible = false; g.add(stream);
   const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: DROP_TEX })); sign.position.set(0, 2.3, Z); sign.scale.setScalar(0.6); g.add(sign);
   levelGroup.add(g); cellDeco[t.i] = g;
@@ -1308,7 +1317,8 @@ const tankEl = $('#tank'), tankFill = $('#tank i');
 function updateTank() {
   if (!lv.towers.length) return;
   const f = tank.on ? tank.level / tank.cap : 1;
-  tankFill.style.width = (f * 100).toFixed(1) + '%'; tankEl.classList.toggle('low', tank.on && f < 0.25);
+  const w = (f * 100).toFixed(1) + '%'; if (tankFill.style.width !== w) tankFill.style.width = w;
+  const low = tank.on && f < 0.25; if (tankEl.classList.contains('low') !== low) tankEl.classList.toggle('low', low);
 }
 // the longest stretch the engine drives between fill-ups going round `order` (which starts at home)
 function waterNeed(order) {
@@ -1355,11 +1365,8 @@ async function outOfWater() {
   sfx.poof();
   for (const car of train.cars) { const q = car.g.position; for (let k = 0; k < 5; k++) puff(V(q.x + rand(-0.4, 0.4), rand(0.2, 0.8), q.z + rand(-0.4, 0.4)), V(rand(-1, 1), rand(0.4, 1.2), rand(-1, 1)), 0.4, 1.3, 1, '#ffffff', 0.9); }
   await tween(0.4, (u) => { for (const car of train.cars) car.g.scale.setScalar(Math.max(0.01, 1 - u)); });
-  train.root.visible = false; for (const car of train.cars) car.g.scale.setScalar(1);
-  tank.on = false; setupPassengers();
-  for (const st of lv.stations) st.sign.position.y = st.sign.userData.y;
-  state = 'edit'; bar.classList.remove('off'); sfx.music('music-draw', MUSIC_VOL); afterEdit();
-  setTimeout(() => sfx.say('Go past the water tower sooner!'), 400);
+  backToDrawing();
+  setTimeout(() => { if (state === 'edit') sfx.say('Go past the water tower sooner!'); }, 400);
 }
 
 /* ============================================================
@@ -1371,8 +1378,11 @@ const trackGroup = new THREE.Group(); scene.add(trackGroup);
 
 function disposeGroup(g) {
   g.traverse((o) => {
-    if (o.geometry && !Object.values(G).includes(o.geometry)) o.geometry.dispose();
-    if ((o.isSprite || o.isMesh) && !Array.isArray(o.material) && o.material.map) { o.material.map.dispose(); o.material.dispose(); }
+    if (o.geometry && !o.isSprite && !Object.values(G).includes(o.geometry)) o.geometry.dispose();
+    if ((o.isSprite || o.isMesh) && !Array.isArray(o.material) && (o.material.map || o.material.userData.own)) {
+      if (o.material.map && o.material.map !== DROP_TEX) o.material.map.dispose();
+      o.material.dispose();
+    }
   });
 }
 function buildBoard() {
@@ -1604,14 +1614,14 @@ canvas.addEventListener('pointerdown', (e) => {
   sfx.init();
   if (state !== 'edit' || stroke) return;
   const i = pickCell(e); if (i < 0) return;
-  canvas.setPointerCapture(e.pointerId);
+  try { canvas.setPointerCapture(e.pointerId); } catch {}   // can fail if the pointer is already gone
   stroke = { id: e.pointerId, cells: [i], mine: new Set(), n: 0, moved: false, hadTrack: conn[i].length > 0 };
   clearMarks(); handOff();
   if (tool === 'erase') { eraseCell(i); stroke.moved = true; }
   cursorAt(i);
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (!stroke || e.pointerId !== stroke.id) return;
+  if (!stroke || e.pointerId !== stroke.id || state !== 'edit') return;
   const i = pickCell(e); if (i < 0 || i === stroke.cells[stroke.cells.length - 1]) return;
   stroke.moved = true;
   if (tool === 'erase') eraseWalk(i); else walkTo(i);
@@ -1620,6 +1630,7 @@ canvas.addEventListener('pointermove', (e) => {
 function endStroke(e) {
   if (!stroke || e.pointerId !== stroke.id) return;
   const s = stroke; stroke = null; cursor.visible = false;
+  if (state !== 'edit') return;
   if (tool === 'draw' && !s.moved) tap(s.cells[0], s.hadTrack);
   afterEdit();
 }
@@ -1677,7 +1688,7 @@ function evaluate() {
 let readySaid = false;
 function afterEdit() {
   const ok = evaluate().ok && waterFits(); goBtn.classList.toggle('ready', ok);
-  if (ok && !readySaid) { readySaid = true; sfx.ding(); setTimeout(() => sfx.say('All joined up! Press the green train!'), 400); }
+  if (ok && !readySaid) { readySaid = true; sfx.ding(); setTimeout(() => { if (state === 'edit') sfx.say('All joined up! Press the green train!'); }, 400); }
   if (!ok) readySaid = false;
   idleT = 0;
 }
@@ -1690,7 +1701,7 @@ const QTEX = canvasTex(128, 128, (x) => {
   x.fillStyle = '#e5484d'; x.font = 'bold 66px Verdana, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('?', 64, 60);
 });
 const marks = [];
-function clearMarks() { for (const m of marks) { scene.remove(m); if (m.geometry && m.geometry !== RING_GEO) m.geometry.dispose(); } marks.length = 0; }
+function clearMarks() { for (const m of marks) scene.remove(m); marks.length = 0; }   // marks share their geometry and materials
 const RING_GEO = new THREE.RingGeometry(0.42, 0.62, 32).rotateX(-Math.PI / 2);
 const RING_MAT = new THREE.MeshBasicMaterial({ color: '#ff3b3b', transparent: true, opacity: 0.85, depthWrite: false });
 const QMAT = new THREE.SpriteMaterial({ map: QTEX, depthTest: false });
@@ -1806,6 +1817,16 @@ async function alight(st) {
   })));
 }
 async function ride(ev) {
+  try { await rideOnce(ev); } catch (err) { console.error(err); backToDrawing(); }
+}
+function backToDrawing() {   // after running dry, or if a ride ever goes wrong
+  train.target = null; train.done = null; train.root.visible = false; for (const car of train.cars) car.g.scale.setScalar(1);
+  tank.on = false; setupPassengers();
+  for (const st of lv.stations) st.sign.position.y = st.sign.userData.y;
+  state = 'edit'; bar.classList.remove('off'); sfx.music('music-draw', MUSIC_VOL); afterEdit();
+}
+async function rideOnce(ev) {
+  stroke = null; cursor.visible = false;
   state = 'ride'; bar.classList.add('off'); sfx.music('music-ride', RIDE_MUSIC_VOL); goBtn.classList.remove('ready'); clearMarks(); handOff(); hintT = 0;
   // pieces that aren't part of the loop are tidied away
   const junk = ev.comps.filter((c) => c !== ev.best).flatMap((c) => c.cells);
@@ -1952,18 +1973,19 @@ function drawBadge() {
 function setTool(t) { tool = t; $('#draw').classList.toggle('on', t === 'draw'); $('#erase').classList.toggle('on', t === 'erase'); sfx.click(); }
 $('#draw').addEventListener('click', () => { sfx.init(); setTool('draw'); });
 $('#erase').addEventListener('click', () => { sfx.init(); setTool('erase'); });
-let undoSnap = null, undoTimer = 0;
+let undoSnap = null, undoTimer = 0, sweptAt = -1;
 $('#clear').addEventListener('click', () => {
   sfx.init(); if (state !== 'edit') return; clearMarks();
   const btn = $('#clear');
   if (btn.classList.contains('undo') && undoSnap) {                 // undo the sweep
+    if (gameTime - sweptAt < 0.6) return;                           // (not a double tap)
     conn = undoSnap.map((a) => a.slice()); for (let i = 0; i < conn.length; i++) dirty.add(i);
     undoSnap = null; btn.classList.remove('undo'); sfx.undo(); afterEdit(); return;
   }
   if (!conn.some((a) => a.length)) { sfx.bonk(); return; }
   undoSnap = conn.map((a) => a.slice());
   for (let i = 0; i < conn.length; i++) if (conn[i].length) { dust(i, '#ffffff', 2); conn[i] = []; dirty.add(i); }
-  sfx.sweep(); btn.classList.add('undo'); clearTimeout(undoTimer);
+  sfx.sweep(); btn.classList.add('undo'); clearTimeout(undoTimer); sweptAt = gameTime;
   undoTimer = setTimeout(() => { btn.classList.remove('undo'); undoSnap = null; }, 5000);
   afterEdit();
 });
@@ -1973,6 +1995,7 @@ goBtn.addEventListener('click', () => {
   const ev = evaluate();
   if (ev.ok) ride(ev); else showProblems(ev);
 });
+document.addEventListener('visibilitychange', () => sfx.hidden(document.hidden));   // no music from a background tab
 const muteBtn = $('#mute');
 const drawMute = () => { muteBtn.textContent = sfx.muted ? '🔇' : '🔈'; };
 drawMute();
@@ -2001,9 +2024,11 @@ $('#again').addEventListener('click', () => {
   for (const car of train.cars) car.g.scale.setScalar(1);
   train.root.visible = false; setupPassengers();
   for (const st of lv.stations) st.sign.position.y = st.sign.userData.y;
-  ride(evaluate());
+  const ev = evaluate();
+  if (ev.ok) ride(ev); else { state = 'edit'; bar.classList.remove('off'); showProblems(ev); }
 });
 window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
   if (state === 'title' && (e.key === 'Enter' || e.key === ' ')) $('#play').click();
   else if (state === 'edit' && e.key === 'Enter') goBtn.click();
   else if (state === 'win' && (e.key === 'Enter' || e.key === ' ')) $('#next').click();
@@ -2040,13 +2065,13 @@ function frame(dt) {
   updatePuffs(dt); updateMarks(); updateHint(dt); updateHand(dt); weather.update(dt, gameTime); updateTank();
   if (state === 'edit' && !stroke) {
     idleT += dt;
-    if (idleT > 25 && !evaluate().ok) { idleT = 0; restartAnim($('#hint'), 'nudge'); }
+    if (idleT > 25) { idleT = 0; if (!evaluate().ok) restartAnim($('#hint'), 'nudge'); }
   }
   updateCamera(dt);
   renderer.render(scene, camera);
 }
 
-newLevel(store.get('level', 1));
+newLevel(Math.max(1, Math.floor(Number(store.get('level', 1))) || 1));
 resize();
 renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.05)));
 window.__choo = {   // handy for debugging in the console
