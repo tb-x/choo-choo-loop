@@ -49,6 +49,17 @@
     background:var(--green) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6 9.6 3.6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/100% no-repeat;
     box-shadow:0 0 0 2px #fff}
 
+  /* the engine's water gauge, on water-tower levels */
+  #tank{position:absolute;top:calc(56px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:5;display:flex;align-items:center;gap:6px;
+    padding:4px 10px 4px 6px;border-radius:20px;background:rgba(255,255,255,.82);box-shadow:0 3px 0 rgba(0,0,0,.15);pointer-events:none}
+  #tank svg{width:22px;height:22px}
+  #tank span{display:block;width:clamp(70px, 22vmin, 120px);height:12px;border-radius:6px;background:#d8e6f2;overflow:hidden;box-shadow:inset 0 0 0 2px #23324a}
+  #tank i{display:block;height:100%;width:100%;background:linear-gradient(#7cc8ff,#2f86e8)}
+  #tank.low i{background:linear-gradient(#ff9a9a,#e5484d);animation:blink .5s steps(2) infinite}
+  #tank.empty{animation:wobble .45s 2}
+  @keyframes blink{50%{opacity:.35}}
+  @keyframes wobble{25%{transform:translateX(calc(-50% - 7px))}75%{transform:translateX(calc(-50% + 7px))}}
+
   #mute{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:calc(10px + env(safe-area-inset-right,0px));z-index:5;
     width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.82);font-size:22px;line-height:44px;padding:0;box-shadow:0 3px 0 rgba(0,0,0,.15)}
 
@@ -137,6 +148,7 @@
       <span id="lvl"><svg viewBox="0 0 32 32"><circle cx="7" cy="5" r="2.2" fill="#c9d3dd"/><circle cx="11" cy="3" r="1.6" fill="#c9d3dd"/><rect x="6" y="7" width="4" height="6" fill="#2b2b33"/><rect x="3.5" y="12" width="15" height="8" rx="2.5" fill="#2f6fde"/><rect x="17" y="6.5" width="10" height="14" rx="1" fill="#2f6fde"/><rect x="16" y="5" width="12" height="2.6" rx="1" fill="#e03131"/><rect x="19.5" y="9" width="5" height="4.5" rx="1" fill="#bfe6ff"/><circle cx="9" cy="23" r="4" fill="#e03131" stroke="#23324a" stroke-width="1.5"/><circle cx="20" cy="23" r="4" fill="#e03131" stroke="#23324a" stroke-width="1.5"/><circle cx="27" cy="24.5" r="2.5" fill="#e03131" stroke="#23324a" stroke-width="1.3"/></svg><b></b></span>
       <span id="dots"></span>
     </div>
+    <div id="tank" hidden aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.5C9 7 5.5 10.6 5.5 14.6a6.5 6.5 0 0 0 13 0C18.5 10.6 15 7 12 2.5z" fill="#3b9cff" stroke="#23324a" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.3 14.5a2.8 2.8 0 0 0 1.6 2.6" stroke="#fff" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg><span><i></i></span></div>
     <button id="mute" aria-label="Sound on or off">🔈</button>
     <div id="hand"><svg viewBox="0 0 64 64"><path d="M25 7a5 5 0 0 1 10 0v21l3-.6a5 5 0 0 1 5.6 3.2l.4.9a5 5 0 0 1 6.6 3.4l.3.9a5 5 0 0 1 6.1 4.9V48c0 8.8-7.2 14-16 14h-5c-6.2 0-10.6-2.8-14-8L11 43.5a5 5 0 0 1 7.6-6.4L25 43z" fill="#fff" stroke="#23324a" stroke-width="3" stroke-linejoin="round"/></svg></div>
   </div>
@@ -184,18 +196,20 @@ const CHUFF_EVERY = 0.55;    // one chuff and one smoke puff every this many uni
 const HINT_TIME = 6;         // seconds the 💡 dots stay on the board
 const CAM_TILT = 56;         // camera angle above the ground in degrees (90 would be straight down)
 const CAM_FOV = 36;
+const WATER_SLACK = 1.5;     // on water levels: how many squares further than needed a full tank reaches
 // One row per level; after the last row every level uses the last row. W×H squares (on a tall screen the
 // board turns so the long side runs up the screen), how many stations, how much of the free ground gets
-// trees, houses and animals (0 to 1), and whether there's a river with bridges and a hill with a tunnel.
+// trees, houses and animals (0 to 1), whether there's a river with bridges and a hill with a tunnel, and how many
+// water towers the engine needs to fill up at (its tank won't last all the way round).
 const LEVELS = [
   { W: 5, H: 4, stations: 2, fill: 0.15 },
   { W: 6, H: 4, stations: 2, fill: 0.3 },
   { W: 6, H: 5, stations: 3, fill: 0.3, river: true },
   { W: 7, H: 5, stations: 3, fill: 0.4, tunnel: true },
   { W: 7, H: 5, stations: 3, fill: 0.5, river: true, tunnel: true },
-  { W: 8, H: 5, stations: 4, fill: 0.5, river: true },
-  { W: 8, H: 6, stations: 4, fill: 0.55, river: true, tunnel: true },
-  { W: 9, H: 6, stations: 5, fill: 0.6, river: true, tunnel: true },
+  { W: 8, H: 5, stations: 4, fill: 0.5, river: true, water: 1 },
+  { W: 8, H: 6, stations: 4, fill: 0.55, river: true, tunnel: true, water: 1 },
+  { W: 9, H: 6, stations: 5, fill: 0.6, river: true, tunnel: true, water: 2 },
 ];
 
 /* ============================================================
@@ -384,6 +398,11 @@ const sfx = (() => {
       if (clip(Math.random() < 0.5 ? 'sfx-chuff1' : 'sfx-chuff2', CLIP_VOL * (0.6 + 0.4 * v), 0.92 + 0.16 * Math.random())) return;
       noise(0.17, 0.2 + 0.1 * v, 1100, 260, 'bandpass', 0, 0.9); tone(95, 55, 0.12, 'sine', 0.14);
     },
+    glug() {   // water pouring into the tender
+      noise(1.6, 0.12, 900, 500, 'bandpass', 0, 1.5, 0.2);
+      for (let i = 0; i < 12; i++) { const f = 280 + Math.random() * 340; tone(f, f * 1.6, 0.07, 'sine', 0.1, i * 0.13 + Math.random() * 0.05); }
+    },
+    sputter() { [0, 0.22, 0.5, 0.9].forEach((d, i) => { noise(0.16, 0.25 - i * 0.05, 800, 200, 'bandpass', d, 1); tone(120, 60, 0.14, 'sine', 0.14 - i * 0.03, d); }); },
     hiss() { if (clip('sfx-hiss')) return; noise(0.7, 0.08, 7000, 3500, 'highpass', 0, 0.7, 0.06); },
     brake() { if (clip('sfx-brake')) return; noise(0.6, 0.06, 4200, 2600, 'bandpass', 0, 6, 0.1); },
     fanfare() {
@@ -421,7 +440,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color('#a8dcff');
 scene.fog = new THREE.Fog('#a8dcff', 70, 160);
 const camera = new THREE.PerspectiveCamera(CAM_FOV, 1, 0.5, 300);
-scene.add(new THREE.HemisphereLight('#e2f2ff', '#5f8f3a', 1.05));
+const hemi = new THREE.HemisphereLight('#e2f2ff', '#5f8f3a', 1.05); scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fff0d2', 2.0);
 sun.position.set(-7, 16, 9);
 sun.castShadow = true;
@@ -596,7 +615,39 @@ const STATION_LOOK = [
   { name: 'Green', color: '#22b14c', sym: 'triangle' },
   { name: 'Purple', color: '#9b5de5', sym: 'diamond' },
 ];
-const DECO = [['tree', 0.34], ['rocks', 0.12], ['house', 0.16], ['pond', 0.1], ['cow', 0.1], ['sheep', 0.1], ['hay', 0.08]];
+// Each level gets a look; they take turns in this order (level 1 meadow, 2 blossom, … 7 meadow again).
+// grass: the two checkerboard greens; hemi/sun: light colours and strength; crowns: tree leaf colours;
+// deco: which obstacles appear and how often; fall: what drifts down from the sky (or glows, for fireflies).
+const MEADOW_DECO = [['tree', 0.34], ['rocks', 0.12], ['house', 0.16], ['pond', 0.1], ['cow', 0.1], ['sheep', 0.1], ['hay', 0.08]];
+const GREY_ROCK = ['#9aa0a6', '#a8acb0', '#8c9298'];
+const THEMES = [
+  { id: 'meadow', grass: ['#8dd257', '#7fc94a'], ground: '#74bd45', sky: '#a8dcff', hemi: ['#e2f2ff', '#5f8f3a', 1.05], sun: ['#fff0d2', 2.0, [-7, 16, 9]],
+    water: '#4fb0f0', crowns: ['#4fb848', '#5cc24f', '#45a83f', '#6cc25a'], pine: '#2f8f4e', blooms: ['#ff6b9a', '#ffd23f', '#ffffff', '#b07cff', '#ff8a3d'],
+    rock: GREY_ROCK, hill: '#6fbf4a', deco: MEADOW_DECO },
+  { id: 'blossom', grass: ['#9cdc6a', '#8fd35c'], ground: '#84cc56', sky: '#c4e6ff', hemi: ['#fff0f6', '#6a9a48', 1.05], sun: ['#fff4e6', 2.0, [-7, 16, 9]],
+    water: '#5ab8f2', crowns: ['#ffb7d0', '#ff9cc2', '#ffc9de', '#f7a8c8', '#fff0f5'], pine: '#3a9a55', blooms: ['#ff9cc2', '#ffffff', '#ffd23f'],
+    rock: GREY_ROCK, hill: '#7cc95a', deco: [['tree', 0.42], ['house', 0.16], ['pond', 0.12], ['sheep', 0.12], ['rocks', 0.06], ['cow', 0.06], ['hay', 0.06]],
+    fall: { colors: ['#ffc0d8', '#ffffff', '#ff9cc2'], n: 140, speed: 0.45, size: 0.13, sway: 1.2 } },
+  { id: 'autumn', grass: ['#bccb60', '#adbf54'], ground: '#a4b453', sky: '#d6e6f0', hemi: ['#fff1dc', '#8a7a3a', 1.0], sun: ['#ffdcae', 2.1, [-10, 13, 9]],
+    water: '#4aa3d8', crowns: ['#e8862f', '#d9542b', '#f2b33d', '#c9452a', '#e8a03a'], pine: '#2f7a46', blooms: ['#ff8a3d', '#ffd23f', '#c9452a'],
+    rock: GREY_ROCK, hill: '#a3b552', deco: [['tree', 0.32], ['pumpkins', 0.16], ['house', 0.14], ['hay', 0.12], ['rocks', 0.08], ['pond', 0.06], ['sheep', 0.06], ['cow', 0.06]],
+    fall: { colors: ['#e8862f', '#d9542b', '#f2b33d'], n: 90, speed: 0.7, size: 0.15, sway: 1.6 } },
+  { id: 'winter', grass: ['#f7fbff', '#e6eff8'], ground: '#eef4fa', sky: '#d3e3f0', fog: '#e6eef6', hemi: ['#f6faff', '#c9d6e4', 1.25], sun: ['#fffaf0', 1.9, [-7, 16, 9]],
+    water: '#7cc4ea', crowns: ['#f4f8ff', '#e6eef8'], pine: '#2f6f5a', snowy: true, roof: '#f8fbff', blooms: ['#e5484d', '#2f6f5a'],
+    rock: ['#8f97a3', '#a3abb6'], hill: '#f0f5fa', bank: ['#ffffff', '#e8eff6'], mound: '#ffffff',
+    deco: [['tree', 0.36], ['snowman', 0.2], ['house', 0.16], ['rocks', 0.1], ['pond', 0.08], ['sheep', 0.1]],
+    fall: { colors: ['#ffffff'], n: 260, speed: 0.8, size: 0.11, sway: 0.6 } },
+  { id: 'desert', grass: ['#f0d49a', '#e8c886'], ground: '#e7c688', sky: '#bfe6ff', fog: '#f3dcae', hemi: ['#fff6e0', '#c9a26a', 1.1], sun: ['#fff0c8', 2.3, [-5, 17, 8]],
+    water: '#36c2d4', crowns: ['#5aa83a', '#6cbd4a'], pine: '#4f9a3a', desert: true, blooms: ['#ff6b9a', '#ffd23f', '#ff8a3d'],
+    rock: ['#c96f4a', '#d98a5a', '#b85c3c'], hill: '#d9a868', bank: ['#d9b98a', '#c9a36e'], mound: '#e2bd7c',
+    deco: [['cactus', 0.3], ['rocks', 0.2], ['house', 0.14], ['camel', 0.12], ['pond', 0.1], ['palms', 0.14]] },
+  { id: 'sunset', grass: ['#92d062', '#84c556'], ground: '#76b350', sky: '#f4b183', fog: '#f2b48e', hemi: ['#ffe0c4', '#7a7fa8', 1.15], sun: ['#ffb070', 2.6, [-13, 10, 6]],
+    water: '#6fb2e6', crowns: ['#4fa848', '#45983f', '#5cae4f'], pine: '#2a7a46', glow: true, blooms: ['#ff6b9a', '#ffd23f', '#ffffff'],
+    rock: GREY_ROCK, hill: '#62ad44', deco: MEADOW_DECO,
+    fall: { colors: ['#fff27a', '#d6ff6a'], n: 70, speed: 0, size: 0.13, fireflies: true } },
+];
+const themeFor = (n) => THEMES[(n - 1) % THEMES.length];
+let TH = THEMES[0];                    // the look being built right now
 const pickW = (list) => { let r = Math.random() * list.reduce((s, x) => s + x[1], 0); for (const x of list) if ((r -= x[1]) <= 0) return x[0]; return list[0][0]; };
 function step(W, H, i, d) { const c = i % W + DX[d], r = Math.floor(i / W) + DZ[d]; return c < 0 || r < 0 || c >= W || r >= H ? -1 : r * W + c; }
 
@@ -642,13 +693,13 @@ function makeLevel(n, portrait) {
   for (let attempt = 0; attempt < 600; attempt++) {
     const loop = genLoop(spec.W, spec.H, rand(0.4, 0.85));
     if (!loop || loop.order.length < Math.max(8, spec.stations * 3)) continue;
-    const L = dress(spec, loop, portrait, attempt > 450);
-    if (L) { L.n = n; return L; }
+    const L = dress(spec, loop, portrait, attempt > 450, themeFor(n));
+    if (L) { L.n = n; L.theme = themeFor(n); return L; }
   }
   return makeLevel(Math.max(1, n - 1), portrait);   // never seen in practice
 }
 
-function dress(spec, loop, portrait, relaxed) {
+function dress(spec, loop, portrait, relaxed, theme) {
   const { W, H } = spec, N = W * H;
   const cells = Array.from({ length: N }, (_, i) => ({ i, kind: 'free', axis: null, deco: null }));
   const on = new Uint8Array(N); for (const i of loop.order) on[i] = 1;
@@ -705,6 +756,20 @@ function dress(spec, loop, portrait, relaxed) {
       for (const d of sideDirs(cells[t].axis)) cells[step(W, H, t, d)].kind = 'mountain';
     }
   }
+  // water towers: on straight bits, spread round the loop so each covers its share of the way
+  const towers = [];
+  if (spec.water) {
+    const hp = pos.get(home), cyc = (a, b) => { const d = Math.abs(a - b); return Math.min(d, L - d); };
+    for (let k = 1; k <= spec.water; k++) {
+      const want = (hp + Math.round(L * k / (spec.water + 1))) % L;
+      const opts = loop.order.filter((i) => cells[i].kind === 'free' && axisOf(i)).sort((a, b) => cyc(pos.get(a), want) - cyc(pos.get(b), want));
+      if (!opts.length || cyc(pos.get(opts[0]), want) > L / 6) { if (!relaxed) return null; continue; }
+      const t = opts[randi(0, Math.min(1, opts.length - 1))];
+      cells[t].kind = 'tower'; cells[t].axis = axisOf(t);
+      const far = portrait ? 3 : 0, sides = sideDirs(cells[t].axis);
+      towers.push({ i: t, side: sides.includes(far) ? far : (sides.find((d) => step(W, H, t, d) < 0 || !on[step(W, H, t, d)]) ?? sides[0]) });
+    }
+  }
   // obstacles: mostly right next to the loop, so they shape where the track can go
   const free = cells.filter((c) => c.kind === 'free' && !on[c.i]);
   const near = (c) => [0, 1, 2, 3].some((d) => { const j = step(W, H, c.i, d); return j >= 0 && on[j]; });
@@ -713,56 +778,128 @@ function dress(spec, loop, portrait, relaxed) {
   for (let k = 0; k < nObs && pool.length; k++) {
     let r = Math.random() * pool.reduce((s, x) => s + x[1], 0), at = 0;
     for (; at < pool.length - 1; at++) if ((r -= pool[at][1]) <= 0) break;
-    const [c] = pool.splice(at, 1)[0]; c.kind = 'block'; c.deco = pickW(DECO);
+    const [c] = pool.splice(at, 1)[0]; c.kind = 'block'; c.deco = pickW(theme.deco);
   }
-  return { W, H, cells, stations, solution: loop.order, river, portrait };
+  return { W, H, cells, stations, towers, solution: loop.order, river, portrait };
 }
 
 const BLOCKED = new Set(['block', 'water', 'mountain']);
-const FIXED = new Set(['station', 'bridge', 'tunnel']);
+const FIXED = new Set(['station', 'bridge', 'tunnel', 'tower']);
 
 /* ============================================================
    Models: scenery
    ============================================================ */
-const GREENS = ['#4fb848', '#5cc24f', '#45a83f', '#6cc25a'];
 function tree(t, x, z, s, pine) {
+  if (TH.desert) return pine ? palm(t, x, z, s) : cactus(t, x, z, s);
   if (pine) {
     put(t, G.cyl, '#7a4b2a', x, 0.15 * s, z, 0.07 * s, 0.3 * s, 0.07 * s);
-    [[0.55, 0.45, 0.55], [0.82, 0.36, 0.48], [1.06, 0.25, 0.42]].forEach(([y, r, h]) => put(t, G.cone, '#2f8f4e', x, y * s, z, r * s, h * s, r * s, 0, true));
+    [[0.55, 0.45, 0.55], [0.82, 0.36, 0.48], [1.06, 0.25, 0.42]].forEach(([y, r, h]) => {
+      put(t, G.cone, TH.pine, x, y * s, z, r * s, h * s, r * s, 0, true);
+      if (TH.snowy) put(t, G.cone, '#ffffff', x, (y + h * 0.25) * s, z, r * 0.56 * s, h * 0.52 * s, r * 0.56 * s, 0, true);   // snow on each tier
+    });
   } else {
     put(t, G.cyl, '#7a4b2a', x, 0.25 * s, z, 0.08 * s, 0.5 * s, 0.08 * s);
-    const g = pick(GREENS);
+    const g = pick(TH.crowns);
     put(t, G.ico1, g, x, 0.8 * s, z, 0.42 * s, 0.38 * s, 0.42 * s, rand(0, TAU), true);
     put(t, G.ico1, g, x + 0.14 * s, 1.04 * s, z - 0.06 * s, 0.25 * s, 0.23 * s, 0.25 * s, rand(0, TAU), true);
   }
 }
 function bush(t, x, z, s) {
-  const g = pick(GREENS);
+  if (TH.desert) {   // a little barrel cactus with a flower
+    put(t, G.ico1, '#5f9e3c', x, 0.14 * s, z, 0.16 * s, 0.14 * s, 0.16 * s, 0, true); put(t, G.sphere, pick(TH.blooms), x, 0.28 * s, z, 0.05 * s); return;
+  }
+  const g = pick(TH.crowns);
   put(t, G.ico1, g, x, 0.18 * s, z, 0.3 * s, 0.22 * s, 0.3 * s, rand(0, TAU), true);
   put(t, G.ico1, g, x + 0.2 * s, 0.14 * s, z + 0.1 * s, 0.2 * s, 0.16 * s, 0.2 * s, rand(0, TAU), true);
 }
 function flowers(t, x, z) {
-  const c = pick(['#ff6b9a', '#ffd23f', '#ffffff', '#b07cff', '#ff8a3d']);
+  const c = pick(TH.blooms);
   for (let k = 0; k < 5; k++) put(t, G.ico, c, x + rand(-0.3, 0.3), 0.06, z + rand(-0.3, 0.3), 0.06);
 }
 function rocks(t, x, z) {
-  for (let k = 0; k < 3; k++) put(t, G.dodeca, pick(['#9aa0a6', '#a8acb0', '#8c9298']), x + rand(-0.45, 0.45), 0.12, z + rand(-0.45, 0.45),
+  for (let k = 0; k < 3; k++) put(t, G.dodeca, pick(TH.rock), x + rand(-0.45, 0.45), 0.12, z + rand(-0.45, 0.45),
     rand(0.2, 0.36), rand(0.16, 0.28), rand(0.2, 0.34), rand(0, TAU), true);
-  put(t, G.ico1, '#6cc25a', x + rand(-0.5, 0.5), 0.06, z + rand(-0.5, 0.5), 0.14, 0.08, 0.14);
+  if (!TH.desert) put(t, G.ico1, TH.snowy ? '#ffffff' : '#6cc25a', x + rand(-0.5, 0.5), 0.06, z + rand(-0.5, 0.5), 0.14, 0.08, 0.14);
 }
+const glowWindow = (m) => { if (m && TH.glow) m.material = mat('#ffd36b', { emissive: '#ffb43a', emissiveIntensity: 1 }); };
 function house(t, yaw) {
   const g = new THREE.Group(); g.rotation.y = yaw; t.add(g);
-  const wall = pick(['#fff1d6', '#ffd6e0', '#d6ecff', '#fff6a8']), roof = pick(['#e5484d', '#3b82f6', '#a0693c', '#22b14c']);
+  if (TH.desert) {   // a flat-roofed adobe house
+    put(g, G.box, '#e3b47e', 0, 0.36, 0, 1.1, 0.72, 0.92);
+    put(g, G.box, '#d6a46c', 0, 0.76, 0, 1.18, 0.08, 1.0);
+    for (const x of [-0.42, -0.14, 0.14, 0.42]) put(g, G.cyl, '#8b5a3c', x, 0.64, 0.5, 0.03, 0.16, 0.03, 0, false, Math.PI / 2);
+    put(g, G.box, '#6b4a2e', 0.25, 0.24, 0.465, 0.26, 0.48, 0.02);
+    glowWindow(put(g, G.box, '#6b4a2e', -0.25, 0.42, 0.465, 0.22, 0.2, 0.02));
+    put(t, G.sphere, '#c96f4a', 0.6, 0.12, 0.6, 0.1, 0.12, 0.1);
+    return;
+  }
+  const wall = pick(['#fff1d6', '#ffd6e0', '#d6ecff', '#fff6a8']), roof = TH.roof || pick(['#e5484d', '#3b82f6', '#a0693c', '#22b14c']);
   put(g, G.box, wall, 0, 0.36, 0, 1.15, 0.72, 0.95);
   put(g, G.prism, roof, 0, 0.92, 0, 1.3, 0.42, 0.62, 0, true);
   put(g, G.box, '#a0693c', 0.32, 1.1, -0.18, 0.14, 0.4, 0.14);
+  if (TH.snowy) put(g, G.box, '#ffffff', 0.32, 1.32, -0.18, 0.17, 0.05, 0.17);
   put(g, G.box, '#8b5a3c', 0, 0.22, 0.48, 0.24, 0.42, 0.04);                      // door (faces the camera)
-  for (const x of [-0.36, 0.36]) { put(g, G.box, '#ffffff', x, 0.45, 0.48, 0.26, 0.26, 0.03); put(g, G.box, '#9fd8ff', x, 0.45, 0.495, 0.19, 0.19, 0.02); }
+  for (const x of [-0.36, 0.36]) { put(g, G.box, '#ffffff', x, 0.45, 0.48, 0.26, 0.26, 0.03); glowWindow(put(g, G.box, '#9fd8ff', x, 0.45, 0.495, 0.19, 0.19, 0.02)); }
   bush(t, rand(-0.6, -0.4), rand(0.6, 0.75), 0.8);
 }
+function cactus(t, x, z, s) {
+  const c = pick(['#4f9a3a', '#5aa83f']);
+  put(t, G.cyl, c, x, 0.45 * s, z, 0.12 * s, 0.9 * s, 0.12 * s, 0, true); put(t, G.sphere, c, x, 0.9 * s, z, 0.12 * s);
+  for (const [side, y0, h] of [[1, 0.38, 0.32], [-1, 0.55, 0.24]]) {
+    const ax = x + side * 0.2 * s;
+    put(t, G.cylX, c, x + side * 0.1 * s, y0 * s, z, 0.2 * s, 0.065 * s, 0.065 * s);
+    put(t, G.cyl, c, ax, (y0 + h / 2) * s, z, 0.07 * s, h * s, 0.07 * s, 0, true); put(t, G.sphere, c, ax, (y0 + h) * s, z, 0.07 * s);
+  }
+  if (Math.random() < 0.5) put(t, G.sphere, pick(['#ff6b9a', '#ffd23f']), x, 1.02 * s, z, 0.05 * s);
+}
+function palm(t, x, z, s) {
+  const lean = Math.random() < 0.5 ? 1 : -1;
+  for (let k = 0; k < 5; k++) put(t, G.cyl, k % 2 ? '#a0763f' : '#8f6834', x + lean * k * k * 0.012 * s, (0.13 + k * 0.25) * s, z, 0.065 * s, 0.27 * s, 0.065 * s);
+  const tx = x + lean * 0.19 * s, ty = 1.27 * s;
+  for (let k = 0; k < 7; k++) {   // fronds droop out from the top
+    const a = k / 7 * TAU + rand(-0.2, 0.2);
+    put(t, G.box, pick(['#3f9a3a', '#4fae45']), tx + Math.cos(a) * 0.3 * s, ty - 0.08 * s, z + Math.sin(a) * 0.3 * s, 0.62 * s, 0.03 * s, 0.16 * s, -a, false, 0, -0.45);
+  }
+  for (const a of [0.5, 2.6]) put(t, G.sphere, '#6b4a2e', tx + Math.cos(a) * 0.08 * s, ty - 0.1 * s, z + Math.sin(a) * 0.08 * s, 0.06 * s);
+}
+function pumpkins(t) {
+  for (const [x, z, s] of [[-0.3, 0.2, 1], [0.3, -0.15, 0.8], [0.15, 0.45, 0.65], [-0.35, -0.4, 0.7]]) {
+    put(t, G.sphere, '#f08a24', x, 0.16 * s, z, 0.24 * s, 0.17 * s, 0.17 * s);
+    put(t, G.sphere, '#e47a18', x, 0.16 * s, z, 0.17 * s, 0.18 * s, 0.24 * s);
+    put(t, G.cyl, '#5b7a2a', x, 0.33 * s, z, 0.025 * s, 0.1 * s, 0.025 * s);
+    put(t, G.sphere, '#4e8a2e', x + 0.08 * s, 0.3 * s, z, 0.09 * s, 0.02 * s, 0.06 * s);
+  }
+}
+function snowman(t, yaw) {
+  const g = new THREE.Group(); g.rotation.y = yaw; t.add(g);   // built facing +z, toward the camera
+  put(g, G.sphere, '#ffffff', 0, 0.28, 0, 0.32); put(g, G.sphere, '#ffffff', 0, 0.7, 0, 0.23); put(g, G.sphere, '#ffffff', 0, 1.02, 0, 0.17);
+  for (const x of [0.06, -0.06]) put(g, G.sphere, '#1d1d24', x, 1.06, 0.15, 0.025);
+  put(g, G.cone, '#ff8a1f', 0, 1.0, 0.24, 0.035, 0.16, 0.035, 0, false, Math.PI / 2);
+  for (const y of [0.74, 0.62]) put(g, G.sphere, '#1d1d24', 0, y, 0.22, 0.025);
+  put(g, G.cyl, '#e5484d', 0, 0.88, 0, 0.17, 0.07, 0.17); put(g, G.box, '#e5484d', 0.09, 0.76, 0.16, 0.07, 0.2, 0.03);
+  put(g, G.cyl, '#1d1d24', 0, 1.24, 0, 0.11, 0.17, 0.11); put(g, G.cyl, '#1d1d24', 0, 1.16, 0, 0.17, 0.02, 0.17);
+  for (const s of [1, -1]) put(g, G.cyl, '#7a4b2a', s * 0.32, 0.8, 0, 0.015, 0.36, 0.015, 0, false, 0, -s * 1.0);
+}
+function camel(t, anims) {
+  const g = new THREE.Group(); g.rotation.y = rand(0, TAU); t.add(g);
+  const C = '#c99a5c', D = '#b88a50';
+  put(g, G.sphere, C, 0, 0.62, 0, 0.36, 0.19, 0.18);
+  put(g, G.sphere, C, -0.05, 0.8, 0, 0.17, 0.17, 0.14);
+  for (const x of [0.22, -0.22]) for (const z of [0.09, -0.09]) put(g, G.cyl, D, x, 0.26, z, 0.04, 0.52, 0.04);
+  put(g, G.cyl, C, 0.36, 0.78, 0, 0.06, 0.38, 0.06, 0, false, 0, -0.55);
+  const head = new THREE.Group(); head.position.set(0.48, 0.95, 0); g.add(head);
+  put(head, G.sphere, C, 0.07, 0, 0, 0.13, 0.075, 0.075);
+  for (const s of [1, -1]) { put(head, G.sphere, '#1d1d24', 0.06, 0.04, s * 0.06, 0.018); put(head, G.sphere, C, -0.02, 0.06, s * 0.05, 0.03, 0.02, 0.02); }
+  put(g, G.cyl, D, -0.37, 0.55, 0, 0.015, 0.22, 0.015, 0, false, 0, 0.3);
+  const ph = rand(0, TAU);
+  anims.push((tm) => { head.rotation.z = Math.sin(tm * 1.2 + ph) * 0.12; head.position.y = 0.95 + Math.sin(tm * 6 + ph) * 0.005; });
+}
 function pond(t, anims) {
-  put(t, G.cyl, '#59b9f4', 0, 0.025, 0, 0.78, 0.05, 0.72, 0, false).material = mat('#59b9f4', { roughness: 0.15, metalness: 0.1 });
-  for (let k = 0; k < 11; k++) { const a = k / 11 * TAU; put(t, G.dodeca, '#a8acb0', Math.cos(a) * 0.8, 0.05, Math.sin(a) * 0.74, rand(0.1, 0.15), 0.08, rand(0.1, 0.15), rand(0, 3), true); }
+  const ice = TH.snowy, wet = ice ? '#d6eefa' : TH.water;
+  put(t, G.cyl, wet, 0, 0.025, 0, 0.78, 0.05, 0.72, 0, false).material = mat(wet, { roughness: ice ? 0.05 : 0.15, metalness: 0.1 });
+  for (let k = 0; k < 11; k++) { const a = k / 11 * TAU; put(t, G.dodeca, ice ? '#ffffff' : pick(TH.rock), Math.cos(a) * 0.8, 0.05, Math.sin(a) * 0.74, rand(0.1, 0.15), 0.08, rand(0.1, 0.15), rand(0, 3), true); }
+  if (ice) { put(t, G.box, '#ffffff', -0.15, 0.056, 0.1, 0.5, 0.004, 0.02, 0.6); put(t, G.box, '#ffffff', 0.2, 0.056, -0.15, 0.4, 0.004, 0.02, -0.4); return; }   // frozen: skate marks, no duck
+  if (TH.desert) { palm(t, -0.75, -0.55, 0.9); palm(t, 0.7, 0.6, 0.75); }                                                                            // an oasis
   for (const [x, z] of [[0.3, 0.25], [-0.35, -0.2]]) put(t, G.cyl, '#4caf50', x, 0.06, z, 0.14, 0.015, 0.14);
   const duck = new THREE.Group(); t.add(duck);
   put(duck, G.sphere, '#ffd84a', 0, 0.1, 0, 0.12, 0.08, 0.09);
@@ -833,7 +970,7 @@ function makeTunnel(i) {
   for (let k = 0; k <= 24; k++) { const u = -U + 2 * U * k / 24; s.lineTo(u, hillY(u)); }
   s.lineTo(U, 0); s.lineTo(R, 0); s.lineTo(R, WALL); s.absarc(0, WALL, R, 0, Math.PI, false); s.lineTo(-R, 0); s.closePath();
   const geo = new THREE.ExtrudeGeometry(s, { depth: CS, bevelEnabled: false, curveSegments: 10 }).translate(0, 0, -CS / 2);
-  const hill = new THREE.Mesh(geo, [mat('#a8957a', FLAT), mat('#6fbf4a', FLAT)]); hill.castShadow = hill.receiveShadow = true; grp.add(hill);
+  const hill = new THREE.Mesh(geo, [mat(TH.desert ? '#c98f5a' : '#a8957a', FLAT), mat(TH.hill, FLAT)]); hill.castShadow = hill.receiveShadow = true; grp.add(hill);
   const inside = new THREE.Mesh(new THREE.BoxGeometry(2 * R - 0.04, WALL + R - 0.02, CS - 0.02), new THREE.MeshBasicMaterial({ color: '#141418', side: THREE.BackSide }));
   inside.position.y = (WALL + R) / 2; grp.add(inside);
   for (const z of [-CS / 2 - 0.02, CS / 2 + 0.02]) {                        // stone portals
@@ -843,7 +980,7 @@ function makeTunnel(i) {
   for (const [u, z, sc] of [[-1.6, 0.3, 0.8], [1.7, -0.4, 0.7], [0.75, 0.45, 0.55]]) {   // little pines on the hill
     const top = new THREE.Group(); top.position.set(u, hillY(u) - 0.12, 0); grp.add(top); tree(top, 0, z, sc, true);
   }
-  put(grp, G.dodeca, '#9aa0a6', -0.9, hillY(-0.9) - 0.05, -0.3, 0.25, 0.18, 0.22, 0.5, true);
+  put(grp, G.dodeca, pick(TH.rock), -0.9, hillY(-0.9) - 0.05, -0.3, 0.25, 0.18, 0.22, 0.5, true);
   return grp;
 }
 
@@ -1048,6 +1185,7 @@ for (const c of train.cars) train.root.add(c.g);
 train.root.visible = false; scene.add(train.root);
 const seats = train.cars.flatMap((car) => car.seats.map((p) => ({ car, p, who: null })));
 const COACH_MID = train.cars[0].len + CAR_GAP + train.cars[1].len + CAR_GAP + train.cars[2].len + CAR_GAP / 2;   // engine nose to the middle of the coaches
+const TENDER_MID = train.cars[0].len + CAR_GAP + train.cars[1].len / 2;                                           // engine nose to the middle of the tender
 
 /* ============================================================
    Steam: soft sprite puffs
@@ -1082,10 +1220,150 @@ function dust(i, color = '#e9dcc4', n = 6) {
 }
 
 /* ============================================================
+   The look of a level: sky, light, ground and weather
+   (petals, leaves, snow or fireflies)
+   ============================================================ */
+const weather = (() => {
+  const N = 300, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), ph = new Float32Array(N), sp = new Float32Array(N), base = [];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.PointsMaterial({ size: 0.13, map: PUFF_TEX, vertexColors: true, transparent: true, depthWrite: false });
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.visible = false; scene.add(pts);
+  let cfg = null, bx = 10, bz = 8, n = 0;
+  return {
+    set(fall, hx, hz) {
+      cfg = fall || null; pts.visible = !!fall; if (!fall) return;
+      bx = hx + 5; bz = hz + 5; n = Math.min(N, fall.n); geo.setDrawRange(0, n);
+      mat.size = fall.size; mat.blending = fall.fireflies ? THREE.AdditiveBlending : THREE.NormalBlending; mat.needsUpdate = true;
+      for (let i = 0; i < n; i++) {
+        pos[i * 3] = rand(-bx, bx); pos[i * 3 + 1] = fall.fireflies ? rand(0.3, 2.2) : rand(0, 9); pos[i * 3 + 2] = rand(-bz, bz);
+        ph[i] = rand(0, TAU); sp[i] = rand(0.7, 1.3); base[i] = lin(pick(fall.colors));
+        col.set([base[i].r, base[i].g, base[i].b], i * 3);
+      }
+      geo.attributes.color.needsUpdate = true;
+    },
+    update(dt, t) {
+      if (!cfg) return;
+      for (let i = 0; i < n; i++) {
+        const k = i * 3;
+        if (cfg.fireflies) {   // drift about and blink
+          pos[k] += Math.sin(t * 0.7 + ph[i]) * dt * 0.3; pos[k + 1] += Math.sin(t * 1.1 + ph[i] * 2) * dt * 0.15; pos[k + 2] += Math.cos(t * 0.6 + ph[i]) * dt * 0.3;
+          const b = Math.pow(Math.max(0, Math.sin(t * 1.6 * sp[i] + ph[i] * 3)), 2);
+          col[k] = base[i].r * b; col[k + 1] = base[i].g * b; col[k + 2] = base[i].b * b;
+        } else {               // fall, swaying, and start again at the top
+          pos[k + 1] -= cfg.speed * sp[i] * dt;
+          pos[k] += (Math.sin(t * 1.3 + ph[i]) * cfg.sway * 0.5 + 0.15) * dt;
+          pos[k + 2] += Math.cos(t * 1.1 + ph[i]) * cfg.sway * 0.3 * dt;
+          if (pos[k + 1] < 0) { pos[k + 1] = 9; pos[k] = rand(-bx, bx); pos[k + 2] = rand(-bz, bz); }
+          if (pos[k] > bx) pos[k] -= 2 * bx;
+        }
+      }
+      geo.attributes.position.needsUpdate = true; if (cfg.fireflies) geo.attributes.color.needsUpdate = true;
+    },
+  };
+})();
+function applyTheme(theme, hx, hz) {
+  TH = theme;
+  scene.background.set(TH.sky); scene.fog.color.set(TH.fog || TH.sky);
+  hemi.color.set(TH.hemi[0]); hemi.groundColor.set(TH.hemi[1]); hemi.intensity = TH.hemi[2];
+  sun.color.set(TH.sun[0]); sun.intensity = TH.sun[1]; sun.position.set(...TH.sun[2]);
+  ground.material.color.set(TH.ground); document.body.style.background = TH.ground;
+  weather.set(TH.fall, hx, hz);
+}
+
+/* ============================================================
+   Water towers and the engine's tank
+   ============================================================ */
+const DROP_TEX = canvasTex(128, 128, (x) => {
+  x.fillStyle = '#ffffff'; x.strokeStyle = '#23324a'; x.lineWidth = 7;
+  x.beginPath(); x.arc(64, 60, 46, 0, TAU); x.fill(); x.stroke();
+  x.beginPath(); x.moveTo(64, 26); x.bezierCurveTo(76, 44, 90, 58, 90, 74); x.arc(64, 74, 26, 0, Math.PI); x.bezierCurveTo(38, 58, 52, 44, 64, 26); x.closePath();
+  x.fillStyle = '#3b9cff'; x.fill();
+  x.fillStyle = 'rgba(255,255,255,.75)'; x.beginPath(); x.ellipse(54, 74, 6, 10, -0.4, 0, TAU); x.fill();
+});
+const DROP_MARK = new THREE.SpriteMaterial({ map: DROP_TEX, depthTest: false });
+function makeTower(t) {
+  const p = cellPos(t.i), g = new THREE.Group(), Z = -0.7, WOOD = '#8b5a3c';
+  g.position.set(p.x, 0, p.z); g.rotation.y = SIDE_YAW[t.side];   // like a station: track along local x, tower on the -z side
+  for (const x of [-0.2, 0.2]) for (const z of [Z - 0.2, Z + 0.2]) put(g, G.cyl, WOOD, x, 0.55, z, 0.045, 1.1, 0.045);
+  for (const z of [Z - 0.2, Z + 0.2]) put(g, G.box, WOOD, 0, 0.5, z, 0.44, 0.04, 0.04);
+  for (const x of [-0.2, 0.2]) put(g, G.box, WOOD, x, 0.5, Z, 0.04, 0.04, 0.44);
+  put(g, G.cyl, '#b07a45', 0, 1.36, Z, 0.36, 0.55, 0.36);
+  for (const y of [1.16, 1.36, 1.56]) put(g, G.cyl, '#2b2b33', 0, y, Z, 0.368, 0.03, 0.368);
+  put(g, G.cone, TH.snowy ? '#ffffff' : '#e5484d', 0, 1.79, Z, 0.42, 0.32, 0.42, 0, true);
+  const arm = new THREE.Group(); arm.position.set(0, 1.22, Z + 0.32); arm.rotation.x = -0.7; g.add(arm);   // the spout, swung up out of the way
+  put(arm, G.cyl, '#3a3a44', 0, 0, 0.26, 0.045, 0.52, 0.045, 0, false, Math.PI / 2);
+  put(arm, G.cyl, '#3a3a44', 0, -0.06, 0.5, 0.05, 0.12, 0.05);
+  const stream = new THREE.Mesh(G.cyl, new THREE.MeshStandardMaterial({ color: '#6ec8ff', transparent: true, opacity: 0.8, roughness: 0.1 }));
+  stream.visible = false; g.add(stream);
+  const sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: DROP_TEX })); sign.position.set(0, 2.3, Z); sign.scale.setScalar(0.6); g.add(sign);
+  levelGroup.add(g); cellDeco[t.i] = g;
+  Object.assign(t, { g, arm, stream });
+}
+const tank = { on: false, level: 1, cap: 1 };
+const tankEl = $('#tank'), tankFill = $('#tank i');
+function updateTank() {
+  if (!lv.towers.length) return;
+  const f = tank.on ? tank.level / tank.cap : 1;
+  tankFill.style.width = (f * 100).toFixed(1) + '%'; tankEl.classList.toggle('low', tank.on && f < 0.25);
+}
+// the longest stretch the engine drives between fill-ups going round `order` (which starts at home)
+function waterNeed(order) {
+  const P = makePath(order), L = P.L, idx = new Map(order.map((c, k) => [c, k]));
+  const h = P.segs[0].s0 + CS / 2 + COACH_MID;
+  const fills = lv.towers.filter((t) => idx.has(t.i)).map((t) => ((P.segs[idx.get(t.i)].s0 + CS / 2 + TENDER_MID - h) % L + L) % L).sort((a, b) => a - b);
+  let prev = 0, worst = 0; for (const f of [...fills, L]) { worst = Math.max(worst, f - prev); prev = f; }
+  return worst;
+}
+function leastNeed(order) {   // either way round, starting from the home station
+  const k = order.indexOf(lv.stations[0].i), o = [...order.slice(k), ...order.slice(0, k)];
+  return Math.min(waterNeed(o), waterNeed([o[0], ...o.slice(1).reverse()]));
+}
+const waterFits = () => !lv.towers.length || leastNeed(loopOrder(lv.stations[0].i)) <= lv.cap + 1e-6;
+async function fillUp(t) {
+  sfx.hiss();
+  await tween(0.45, (u) => { t.arm.rotation.x = -0.7 + 0.95 * u; });
+  t.stream.visible = true; t.stream.position.set(0, 0.92, 0.12); t.stream.scale.set(0.04, 0.26, 0.04);
+  sfx.glug(); const from = tank.level;
+  await tween(1.6, (u) => {
+    tank.level = from + (tank.cap - from) * u;
+    t.stream.scale.x = t.stream.scale.z = 0.04 + Math.sin(gameTime * 30) * 0.006;
+    if (Math.random() < 0.3) puff(t.g.localToWorld(V(rand(-0.1, 0.1), 0.8, 0.12)), V(rand(-0.5, 0.5), 0.6, rand(-0.5, 0.5)), 0.08, 0.2, 0.5, '#9fdcff', 0.9);
+  });
+  t.stream.visible = false;
+  await tween(0.4, (u) => { t.arm.rotation.x = 0.25 - 0.95 * u; });
+}
+// the tank ran dry before a water tower: the engine sputters to a stop, then everyone goes back to try again
+async function outOfWater() {
+  sfx.sputter(); restartAnim(tankEl, 'empty');
+  const e = train.cars[0].g;
+  for (let k = 0; k < 6; k++) puff(chimney(), V(rand(-0.3, 0.3), 0.5, rand(-0.3, 0.3)), 0.2, 0.6, 1.0, '#9a9a9a', 0.8);
+  await tween(0.6, (u) => { e.rotation.z = Math.sin(u * Math.PI * 6) * 0.05 * (1 - u); });
+  e.rotation.z = 0; sfx.sadToot(); sfx.say('Oh no! Out of water!');
+  await wait(2);
+  const here = pathAt(path, train.s - train.cars[0].len / 2);
+  const cell = Math.floor(here.z / CS + lv.H / 2) * lv.W + Math.floor(here.x / CS + lv.W / 2);
+  clearMarks();
+  const ring = new THREE.Mesh(RING_GEO, RING_MAT), cp = cellPos(cell); ring.position.set(cp.x, 0.3 + liftOf(cell), cp.z); ring.userData.ring = true; scene.add(ring); marks.push(ring);
+  for (const t of lv.towers) {
+    const p = cellPos(t.i), m = new THREE.Sprite(DROP_MARK); m.position.set(p.x, 3, p.z); m.scale.setScalar(0.85);
+    m.userData.q = true; m.userData.y = 3; m.renderOrder = 5; scene.add(m); marks.push(m);
+  }
+  sfx.poof();
+  for (const car of train.cars) { const q = car.g.position; for (let k = 0; k < 5; k++) puff(V(q.x + rand(-0.4, 0.4), rand(0.2, 0.8), q.z + rand(-0.4, 0.4)), V(rand(-1, 1), rand(0.4, 1.2), rand(-1, 1)), 0.4, 1.3, 1, '#ffffff', 0.9); }
+  await tween(0.4, (u) => { for (const car of train.cars) car.g.scale.setScalar(Math.max(0.01, 1 - u)); });
+  train.root.visible = false; for (const car of train.cars) car.g.scale.setScalar(1);
+  tank.on = false; setupPassengers();
+  for (const st of lv.stations) st.sign.position.y = st.sign.userData.y;
+  state = 'edit'; bar.classList.remove('off'); sfx.music('music-draw', MUSIC_VOL); afterEdit();
+  setTimeout(() => sfx.say('Go past the water tower sooner!'), 400);
+}
+
+/* ============================================================
    Building a level on screen
    ============================================================ */
 const levelGroup = new THREE.Group(); scene.add(levelGroup);
-let lvAnims = [], cellDeco = [], waterTex = null, waterDir = 'row';
+let lvAnims = [], cellDeco = [], waterTex = null, waterDir = 'row', towerParts = [];
 const trackGroup = new THREE.Group(); scene.add(trackGroup);
 
 function disposeGroup(g) {
@@ -1097,17 +1375,18 @@ function disposeGroup(g) {
 function buildBoard() {
   disposeGroup(levelGroup); levelGroup.clear(); pax = [];
   critters.splice(0, critters.length, ...critters.filter((c) => train.cars[0].g.children.includes(c.g)));   // keep the driver
-  lvAnims = []; cellDeco = [];
+  lvAnims = []; cellDeco = []; towerParts = [];
   const { W, H } = lv, hx = W * CS / 2, hz = H * CS / 2;
+  applyTheme(lv.theme, hx, hz);
   const facing = lv.portrait ? Math.PI / 2 : 0;          // houses turn their door toward the camera
   for (const st of lv.stations) st.canvas = signCanvas(st.look);
 
   // grass squares in a soft checkerboard
   const tiles = canvasTex(W * 64, H * 64, (x) => {
     for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
-      x.fillStyle = (r + c) % 2 ? '#7fc94a' : '#8dd257'; x.fillRect(c * 64, r * 64, 64, 64);
-      x.strokeStyle = 'rgba(255,255,255,.22)'; x.lineWidth = 3; x.strokeRect(c * 64 + 3, r * 64 + 3, 58, 58);
-      x.fillStyle = 'rgba(60,120,40,.18)';
+      x.fillStyle = TH.grass[(r + c) % 2]; x.fillRect(c * 64, r * 64, 64, 64);
+      x.strokeStyle = TH.snowy ? 'rgba(150,175,205,.35)' : 'rgba(255,255,255,.22)'; x.lineWidth = 3; x.strokeRect(c * 64 + 3, r * 64 + 3, 58, 58);
+      x.fillStyle = TH.snowy ? 'rgba(150,175,205,.25)' : TH.desert ? 'rgba(160,110,50,.18)' : 'rgba(60,120,40,.18)';
       for (let k = 0; k < 6; k++) x.fillRect(c * 64 + rand(8, 54), r * 64 + rand(8, 54), 3, 5);
     }
   });
@@ -1121,7 +1400,7 @@ function buildBoard() {
   if (lv.river) {
     const SPAN = 160, row = lv.river.dir === 'row'; waterDir = lv.river.dir;
     waterTex = canvasTex(256, 64, (x) => {
-      x.fillStyle = '#4fb0f0'; x.fillRect(0, 0, 256, 64);
+      x.fillStyle = TH.water; x.fillRect(0, 0, 256, 64);
       x.strokeStyle = 'rgba(255,255,255,.45)'; x.lineWidth = 3; x.lineCap = 'round';
       for (let k = 0; k < 9; k++) { const y = rand(8, 56), x0 = rand(0, 230); x.beginPath(); x.moveTo(x0, y); x.quadraticCurveTo(x0 + 10, y - 4, x0 + 22, y); x.stroke(); }
     });
@@ -1136,7 +1415,7 @@ function buildBoard() {
       if (bridges.some((b) => Math.abs(t - b) < CS / 2 + 0.15)) continue;
       for (const s of [-1, 1]) {
         const off = at + s * (CS / 2 + 0.02), x = row ? t : off, z = row ? off : t;
-        deco.add(G.dodeca, M(x, 0.04, z, rand(0.1, 0.16), rand(0.06, 0.1), rand(0.1, 0.16), rand(0, 3)), pick(['#a8acb0', '#c9c2b0', '#9aa0a6']));
+        deco.add(G.dodeca, M(x, 0.04, z, rand(0.1, 0.16), rand(0.06, 0.1), rand(0.1, 0.16), rand(0, 3)), pick(TH.bank || ['#a8acb0', '#c9c2b0', '#9aa0a6']));
       }
     }
     for (const i of lv.river.cells) if (lv.cells[i].kind === 'bridge') levelGroup.add(makeBridge(i));
@@ -1163,6 +1442,8 @@ function buildBoard() {
     if (Math.abs(x) < hx + 0.8 && Math.abs(z) < hz + 0.8) continue;
     if (lv.river && Math.abs((lv.river.dir === 'row' ? z : x) - riverAt) < CS / 2 + 0.6) continue;
     const r = Math.random(), far = Math.max(Math.abs(x) - hx, Math.abs(z) - hz);
+    if (TH.mound && far > 4 && Math.random() < 0.1) { deco.add(G.ico1, M(x, 0, z, rand(0.8, 1.6), rand(0.2, 0.4), rand(0.8, 1.6), rand(0, 3)), TH.mound); continue; }   // dunes or snowdrifts
+    if (TH.desert && r < 0.2) { rocks(deco, x, z); continue; }
     if (r < 0.32) tree(deco, x, z, rand(0.9, 1.4) + far * 0.03, false);
     else if (r < 0.58) tree(deco, x, z, rand(0.9, 1.5) + far * 0.03, true);
     else if (r < 0.78) bush(deco, x, z, rand(0.8, 1.3));
@@ -1182,10 +1463,16 @@ function buildBoard() {
     else if (c.deco === 'pond') pond(g, lvAnims);
     else if (c.deco === 'cow') cow(g, lvAnims);
     else if (c.deco === 'sheep') sheep(g, lvAnims);
+    else if (c.deco === 'pumpkins') pumpkins(g);
+    else if (c.deco === 'snowman') snowman(g, facing);
+    else if (c.deco === 'cactus') { const n = randi(1, 2); for (let k = 0; k < n; k++) cactus(g, n === 1 ? 0 : rand(-0.4, 0.4), n === 1 ? 0 : rand(-0.4, 0.4), n === 1 ? 1.2 : rand(0.8, 1)); }
+    else if (c.deco === 'camel') camel(g, lvAnims);
+    else if (c.deco === 'palms') { palm(g, -0.25, 0.1, 1.15); palm(g, 0.35, -0.25, 0.85); }
     else hay(g);
     if (c.deco !== 'pond' && c.deco !== 'house' && Math.random() < 0.5) flowers(g, rand(-0.6, 0.6), rand(-0.6, 0.6));
   }
   for (const st of lv.stations) makeStation(st);
+  for (const t of lv.towers) makeTower(t);
   setupPassengers();
 
   const ext = Math.max(hx, hz) + 3;
@@ -1258,6 +1545,7 @@ const WHY = {
   station: 'Trains go straight through the station!',
   bridge: 'Cross the river on a bridge!', water: 'Cross the river on a bridge!',
   tunnel: 'Go straight through the tunnel!', mountain: 'Go through the tunnel!',
+  tower: 'Trains go straight past the water tower!',
 };
 function refuse(at, why) {
   flash(at);
@@ -1385,7 +1673,7 @@ function evaluate() {
 }
 let readySaid = false;
 function afterEdit() {
-  const ok = evaluate().ok; goBtn.classList.toggle('ready', ok);
+  const ok = evaluate().ok && waterFits(); goBtn.classList.toggle('ready', ok);
   if (ok && !readySaid) { readySaid = true; sfx.ding(); setTimeout(() => sfx.say('All joined up! Press the green train!'), 400); }
   if (!ok) readySaid = false;
   idleT = 0;
@@ -1470,6 +1758,7 @@ function updateTrain(dt) {
     const want = Math.max(0.25, Math.min(TRAIN_SPEED, vStop));
     train.v = train.v < want ? Math.min(want, train.v + TRAIN_ACCEL * dt) : want;
     const ds = Math.min(rem, train.v * dt); train.s += ds; train.dist += ds;
+    if (tank.on) tank.level = Math.max(0, tank.level - ds);
     if (train.s >= train.target - 1e-4) { train.s = train.target; train.v = 0; train.target = null; const d = train.done; train.done = null; d(); }
     if (train.dist >= train.chuffAt) {
       train.chuffAt = train.dist + CHUFF_EVERY; const k = train.v / TRAIN_SPEED;
@@ -1518,10 +1807,15 @@ async function ride(ev) {
   // pieces that aren't part of the loop are tidied away
   const junk = ev.comps.filter((c) => c !== ev.best).flatMap((c) => c.cells);
   if (junk.length) { for (const i of junk) { for (const d of [...conn[i]]) unlink(i, d); dust(i, '#ffffff', 4); } sfx.poof(); await wait(0.5); }
-  const home = lv.stations[0], order = loopOrder(home.i);
+  const home = lv.stations[0];
+  let order = loopOrder(home.i);
+  if (lv.towers.length) { const rev = [order[0], ...order.slice(1).reverse()]; if (waterNeed(rev) < waterNeed(order)) order = rev; }   // go the way the water lasts
   path = makePath(order);
   const stops = lv.stations.map((st) => ({ st, s: stopS(order, st) }));
-  const visit = stops.slice(1).sort((a, b) => a.s - b.s);
+  const fills = lv.towers.filter((t) => order.includes(t.i)).map((t) => ({ tower: t, s: path.segs[order.indexOf(t.i)].s0 + CS / 2 + TENDER_MID }));
+  for (const f of fills) if (f.s < stops[0].s) f.s += path.L;
+  const visit = [...stops.slice(1), ...fills].sort((a, b) => a.s - b.s);
+  tank.on = lv.towers.length > 0; tank.cap = lv.cap || 1; tank.level = tank.cap;
   train.s = stops[0].s;
   await appear();
   sfx.hiss(); await wait(0.5);
@@ -1529,8 +1823,11 @@ async function ride(ev) {
   await board(home); visited(home);
   for (const stop of [...visit, { st: home, s: stops[0].s + path.L }]) {
     await wait(0.35); sfx.toot(2); await wait(0.7);
-    await drive(stop.s - train.s);
+    const need = stop.s - train.s;
+    if (tank.on && need > tank.level + 1e-3) { await drive(tank.level); await outOfWater(); return; }
+    await drive(need);
     sfx.brake(); for (let k = 0; k < 4; k++) puff(chimney(), V(rand(-0.4, 0.4), 0.9, rand(-0.4, 0.4)), 0.3, 1.0, 1.2, '#ffffff', 0.8);
+    if (stop.tower) { await fillUp(stop.tower); continue; }
     const last = stop.st === home;
     sfx.say(last ? 'Back home!' : `${stop.st.look.name} station!`);
     visited(stop.st); await wait(0.4);
@@ -1611,7 +1908,8 @@ function fitCamera() {
   const hx = lv.W * CS / 2 + 0.3, hz = lv.H * CS / 2 + 0.3, pts = [];
   for (const x of [-hx, hx]) for (const z of [-hz, hz]) for (const y of [0, 1.3]) pts.push(V(x, y, z));
   const cam = new THREE.PerspectiveCamera(CAM_FOV, w / h, 0.5, 300);
-  const TOP = 0.8, BOT = -0.94, SIDE = 0.94; let shift = 0, d = 30;
+  const TOP = lv.towers.length ? 0.72 : 0.8, BOT = -0.94, SIDE = 0.94;   // room at the top for the badge (and the water gauge)
+  let shift = 0, d = 30;
   const bounds = (dd, sh) => {
     const tgt = az.clone().multiplyScalar(-sh); cam.position.copy(dir).multiplyScalar(dd).add(tgt); cam.lookAt(tgt); cam.updateMatrixWorld();
     let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
@@ -1681,14 +1979,16 @@ function newLevel(n) {
   lv = makeLevel(n, isPortrait());
   train.root.visible = false; path = null; hintT = 0; saidWhy.clear(); readySaid = false;
   for (const car of train.cars) car.g.scale.setScalar(1);
+  lv.cap = lv.towers.length ? leastNeed(lv.solution) + WATER_SLACK * CS : 0;   // a full tank: the solution's longest stretch plus a bit
   resetTrack(); clearMarks(); buildBoard(); fitCamera();
+  tank.on = false; $('#tank').hidden = !lv.towers.length;
   goBtn.classList.remove('ready'); bar.classList.remove('off');
   $('#clear').classList.remove('undo'); undoSnap = null; setTool('draw');
   state = $('#start').hidden ? 'edit' : 'title';
 }
 function startLevel() {
   state = 'edit'; idleT = 0; sfx.music('music-draw', MUSIC_VOL);
-  sfx.say(lv.n === 1 ? 'Draw a track that joins all the stations!' : 'Join all the stations!');
+  sfx.say(lv.n === 1 ? 'Draw a track that joins all the stations!' : lv.towers.length ? 'The engine needs water! Go past the water tower.' : 'Join all the stations!');
   if (lv.n <= 2) handOn_();
 }
 $('#play').addEventListener('click', () => { sfx.init(); sfx.click(); $('#start').hidden = true; startLevel(); });
@@ -1721,7 +2021,7 @@ function updatePieces(dt) {
 function updateMarks() {
   for (const m of marks) {
     if (m.userData.ring) { const k = 1 + 0.15 * Math.sin(gameTime * 8); m.scale.set(k, 1, k); }
-    if (m.userData.q) m.position.y = 2.1 + Math.abs(Math.sin(gameTime * 4)) * 0.25;
+    if (m.userData.q) m.position.y = (m.userData.y ?? 2.1) + Math.abs(Math.sin(gameTime * 4)) * 0.25;
   }
   RING_MAT.opacity = 0.6 + 0.3 * Math.sin(gameTime * 8);
 }
@@ -1734,7 +2034,7 @@ function frame(dt) {
   for (const c of critters) updateCritter(c, dt);
   for (const f of lvAnims) f(gameTime);
   if (waterTex) waterTex.offset.x -= dt * 0.05;
-  updatePuffs(dt); updateMarks(); updateHint(dt); updateHand(dt);
+  updatePuffs(dt); updateMarks(); updateHint(dt); updateHand(dt); weather.update(dt, gameTime); updateTank();
   if (state === 'edit' && !stroke) {
     idleT += dt;
     if (idleT > 25 && !evaluate().ok) { idleT = 0; restartAnim($('#hint'), 'nudge'); }
@@ -1747,7 +2047,7 @@ newLevel(store.get('level', 1));
 resize();
 renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.05)));
 window.__choo = {   // handy for debugging in the console
-  get lv() { return lv; }, get state() { return state; }, conn: () => conn, evaluate, newLevel, makeLevel, cut: eraseCell,
+  get lv() { return lv; }, get state() { return state; }, conn: () => conn, evaluate, newLevel, makeLevel, cut: eraseCell, waterNeed, waterFits, tank,
   solve() { const s = lv.solution; resetTrack(); for (let k = 0; k < s.length; k++) link(s[k], dirTo(s[k], s[(k + 1) % s.length])); afterEdit(); },
   tick(seconds) { for (let i = 0; i < seconds * 30; i++) frame(1 / 30); },
   get sound() { return sfx.debug; },

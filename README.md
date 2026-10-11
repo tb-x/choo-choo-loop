@@ -9,6 +9,8 @@ A 3D train game for young kids (around age 5), made for phones and tablets. Draw
 - The **💡** button shows one way to do it with glowing dots. On the first two levels a finger shows how to draw.
 - When the loop is complete the green train button starts to pulse. Press it: any leftover bits of track get tidied away, the steam engine appears in a puff of smoke at the red ★ home station, and the passengers hop aboard. Each one wears a party hat in the colour of the station they're going to. The train chuffs round the loop, stops at every station where its passengers jump off and new ones get on, and finally brings everyone back home for a party.
 - If the loop isn't finished, the train gives a sad toot, red rings mark the gaps, a **?** floats over any station the track misses, and a voice says what's wrong. Nothing is lost; just fix it and press again.
+- From level 6 the engine needs **water**. A gauge under the level badge shows its tank, and a full tank doesn't last the whole way round, so the loop has to pass a water tower (blue droplet sign) in time. Level 8 and up has two towers. The train stops under the tower, swings the spout down and fills up with a glug. If the tank runs dry first, the engine sputters to a stop and puffs away, a droplet bubbles over the tower and a voice says to go past it sooner. Shorten the way to the tower and try again. The train always picks whichever direction round the loop makes the water last.
+- Each level has its own look, taking turns: a green **meadow**, pink **cherry blossom** with petals drifting down, **autumn** with orange trees, falling leaves and pumpkins, **snow** with snowmen, snowy pines, white roofs and frozen ponds, the **desert** with cacti, palms, camels, adobe houses, an oasis and dunes, and a **sunset** with warm light, glowing windows and fireflies. Then it starts over.
 - Every level is new and made up on the spot, but always has a solution. Later levels have bigger boards, more stations and more things in the way. The game remembers which level you reached.
 - 🏠 in the corner goes back to the list of all games.
 
@@ -33,7 +35,9 @@ At the top of the script in `index.html`:
 - `CHUFF_EVERY`: distance between chuffs and smoke puffs.
 - `HINT_TIME`: how long the 💡 dots stay on the board, in seconds.
 - `CAM_TILT`: how steeply the camera looks down (90 would be straight down, which is easier to draw on but looks flatter).
-- `LEVELS`: one row per level: board size, number of stations, how full the free ground gets (0 to 1), and whether there's a river and a tunnel. Levels after the last row repeat the last row.
+- `WATER_SLACK`: on water levels, how many squares further than strictly needed a full tank reaches. Raise it to make water levels easier.
+- `LEVELS`: one row per level: board size, number of stations, how full the free ground gets (0 to 1), whether there's a river and a tunnel, and how many water towers there are. Levels after the last row repeat the last row.
+- `THEMES` (next to the level maker): the six looks, in the order they take turns: grass, sky, light, tree and flower colours, which obstacles appear, and what falls from the sky.
 
 At the top of the sound section in `index.html`:
 
@@ -52,4 +56,4 @@ Voices and sounds: [elevenlabs.io](https://elevenlabs.io). Music: Eleven Music. 
 - **Sound effects** (`assets/sfx-*.mp3`, 16 clips): ElevenLabs Sound Effects. Two steam chuffs, a toot-toot whistle, a long departure whistle, a sad droopy whistle, the station bell, brake squeal with steam hiss, idle steam hiss, a magic poof (the train appearing), a track clack, eraser rub, broom sweep, undo whoosh, a boing (passengers hopping), a soft bonk, little animals cheering, and the win fanfare.
 - **Music** (`assets/music-*.mp3`, 2 tracks): Eleven Music (model music_v2), instrumental. `music-draw` (1:00), a gentle ukulele and glockenspiel loop while drawing; `music-ride` (0:45), a bouncy "chugga-chugga" tune for the train ride.
 
-The rising notes as each piece of track is laid, the "ready" chime and the hint sparkle are still synthesized in the browser, and so is every sound when a clip can't load.
+The rising notes as each piece of track is laid, the "ready" chime, the hint sparkle, the water tower's glug and the engine's out-of-water sputter are synthesized in the browser, and so is every sound when a clip can't load. The three water lines ("The engine needs water! Go past the water tower.", "Oh no! Out of water!", "Go past the water tower sooner!") and the water tower tip use the device's own voice for now.
